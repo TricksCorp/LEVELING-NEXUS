@@ -836,7 +836,7 @@ onAuthStateChanged(auth, async (user) => {
 
     // Guard — already evaluated, skip to home
     if (data.player?.evaluationDone === true) {
-      window.location.href = "Home.html";
+      window.location.href = "/LEVELING-NEXUS/Login.html";
       return;
     }
 
