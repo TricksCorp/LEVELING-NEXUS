@@ -66,6 +66,9 @@ style.textContent = `
 .quest-category.strength     { color: #ff8080; }
 .quest-category.intelligence { color: #41b6ff; }
 .quest-category.urgent-cat   { color: #ffb800; }
+.quest-category.stamina      { color: #41ff88; }
+.quest-category.health       { color: #41ff88; }
+.quest-category.multi        { color: #41ff88; }
 
 .quest-exp {
   font-family: "Orbitron", system-ui;
@@ -178,10 +181,13 @@ style.textContent = `
 .ip-category {
   font-family: "Orbitron", system-ui;
   font-size: 9px; letter-spacing: 0.5px; flex-shrink: 0;
-  color: rgba(65,182,255,0.6); /* fallback for any category */
+  color: rgba(65,182,255,0.6);
 }
 .ip-category.strength     { color: #ff8080; }
 .ip-category.intelligence { color: #41b6ff; }
+.ip-category.stamina      { color: #41ff88; }
+.ip-category.health       { color: #41ff88; }
+.ip-category.multi        { color: #41ff88; }
 
 .ip-time {
   font-family: "Orbitron", system-ui;
@@ -302,11 +308,6 @@ let isSyncingGameData = false;
 // ===============================
 /**
  * Apply XP gain or loss, handling both level-up AND level-down.
- *
- * Level-up:  when xp >= level * 1000, carry over and increment level.
- * Level-down: when xp < 0 and level > 1, borrow from the previous
- *             level's XP pool (previous level × 1000). Level cannot
- *             drop below 1 — any remaining negative XP is clamped to 0.
  */
 function applyXPAndLevelUp(player, expGain) {
   let level = player.level ?? 1;
@@ -322,13 +323,11 @@ function applyXPAndLevelUp(player, expGain) {
   }
 
   // ── Level DOWN ──
-  // Each time XP goes negative, drop one level and add that level's
-  // full XP pool back. Stop at level 1 — clamp XP to 0 there.
   while (xp < 0 && level > 1) {
     level -= 1;
-    xp    += level * 1000;   // add the lower level's full pool
+    xp    += level * 1000;
   }
-  if (xp < 0) xp = 0;        // floor at 0 if already level 1
+  if (xp < 0) xp = 0;
 
   return { newLevel: level, newXP: xp };
 }
@@ -346,10 +345,7 @@ function getISOWeek(date) {
 }
 
 function daysUntil(ts) { return Math.max(0, Math.ceil((ts - Date.now()) / 86400000)); }
-
-function daysElapsed(createdAtMs) {
-  return Math.floor((Date.now() - createdAtMs) / 86400000);
-}
+function daysElapsed(createdAtMs) { return Math.floor((Date.now() - createdAtMs) / 86400000); }
 
 function calcUrgentXP(player, createdAtMs) {
   const level   = player.level ?? 1;
@@ -358,27 +354,15 @@ function calcUrgentXP(player, createdAtMs) {
   return Math.max(0, 3000 * level - decay);
 }
 
-/**
- * Returns today as "YYYY-MM-DD" — used as a key to track
- * which daily quests were completed and which active quests were accepted today.
- */
 function getTodayKey() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
 }
 
-/**
- * Get today's day abbreviation matching the quest days array format.
- * Returns e.g. "Mon", "Tue" … "Sun"
- */
 function getTodayAbbr() {
   return ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][new Date().getDay()];
 }
 
-/**
- * Returns today's scheduled start/end as absolute ms timestamps.
- * startMin / endMin are minutes since midnight.
- */
 function getTodaySchedule(quest) {
   const now    = new Date();
   const base   = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -387,18 +371,6 @@ function getTodaySchedule(quest) {
   return { startMs, endMs };
 }
 
-/**
- * Determine what phase a quest is in right now.
- *
- * Phases:
- *   "not-today"      — not scheduled today
- *   "too-early"      — more than 30 min before accept window opens
- *   "accept-window"  — within 30 min before start (can accept on time)
- *   "late-accept"    — past start, before (end - 30min), already accepted or can accept late
- *   "final-window"   — within 30 min before end (finish button active)
- *   "grace"          — past end, within 30-min grace for finishing
- *   "expired"        — past grace period — quest window is fully closed
- */
 function getQuestPhase(quest) {
   const today = getTodayAbbr();
   if (!(quest.days || []).includes(today)) return "not-today";
@@ -415,10 +387,6 @@ function getQuestPhase(quest) {
   return "expired";
 }
 
-/**
- * Calculate the XP penalty for late acceptance.
- * Every 30 min past start: first interval = 200×lvl, subsequent = 100×lvl each.
- */
 function calcLateAcceptPenalty(quest, player) {
   const { startMs } = getTodaySchedule(quest);
   const level       = player.level ?? 1;
@@ -428,14 +396,38 @@ function calcLateAcceptPenalty(quest, player) {
   return (200 + Math.max(0, intervals - 1) * 100) * level;
 }
 
-/**
- * Base XP for completing an active quest on time.
- * 100 × level × number of 30-min slots.
- */
 function calcActiveXP(quest, player) {
   const level = player.level ?? 1;
   const slots = quest.slots || (quest.endMin - quest.startMin) / 30;
   return slots * 100 * level;
+}
+
+// ===============================
+// CATEGORY HELPERS
+// Centralised so every render spot
+// handles both string and array categories
+// identically.
+// ===============================
+
+/**
+ * Returns the CSS class to use for a category.
+ * For arrays with multiple entries, returns "multi" → green.
+ * For a single string, returns the lowercased value.
+ */
+function getCatClass(category) {
+  if (Array.isArray(category)) {
+    return category.length > 1 ? "multi" : (category[0] || "").toLowerCase();
+  }
+  return (category || "").toLowerCase();
+}
+
+/**
+ * Returns the display string for a category.
+ * Arrays are joined as "Health + Stamina" style.
+ */
+function getCatDisplay(category) {
+  if (Array.isArray(category)) return category.join(" + ");
+  return category || "—";
 }
 
 // ===============================
@@ -477,10 +469,6 @@ function fmtMs(ms) {
 // ===============================
 // DAILY QUEST ROW
 // ===============================
-/**
- * Build a stable task key from task text + category for tracking completion.
- * Used as part of the daily completion record in Firestore.
- */
 function _dailyKey(task, category) {
   return `${category}::${task}`.replace(/\s+/g, "_").toLowerCase();
 }
@@ -489,14 +477,15 @@ function createDailyQuestRow(task, category, player, userId, completedTodaySet) 
   const row = document.createElement("div");
   row.className = "quest-row";
 
-  const catClass  = category.toLowerCase();
-  const taskKey   = _dailyKey(task, category);
+  const catClass  = getCatClass(category);
+  const catDisplay = getCatDisplay(category);
+  const taskKey   = _dailyKey(task, Array.isArray(category) ? category.join("+") : category);
   const isDone    = completedTodaySet.has(taskKey);
 
   row.innerHTML = `
     <div class="quest-row-left">
       <div class="quest-title">${task}</div>
-      <div class="quest-category ${catClass}">${category}</div>
+      <div class="quest-category ${catClass}">${catDisplay}</div>
       <div class="quest-exp">Exp Gain: ${(player.level??1)*50}</div>
     </div>
     <div class="quest-row-right">
@@ -504,7 +493,7 @@ function createDailyQuestRow(task, category, player, userId, completedTodaySet) 
     </div>
   `;
 
-  if (isDone) return row; // Already done today — no button wiring needed
+  if (isDone) return row;
 
   const btn = row.querySelector(".quest-complete-btn");
 
@@ -538,8 +527,6 @@ function createDailyQuestRow(task, category, player, userId, completedTodaySet) 
         player.stats.intelligence = cur + 1;
       }
 
-      // ── Persist daily completion for today ──
-      // Stored as quests.dailyCompleted: { "YYYY-MM-DD": ["key1","key2",...] }
       const gameRef = doc(firestore, "gameData", userId);
       const snap    = await getDoc(gameRef);
       if (snap.exists()) {
@@ -547,16 +534,14 @@ function createDailyQuestRow(task, category, player, userId, completedTodaySet) 
         const todayList = stored[todayKey] || [];
         if (!todayList.includes(taskKey)) todayList.push(taskKey);
         updates[`quests.dailyCompleted.${todayKey}`] = todayList;
-        // Add taskKey to local set so re-renders this session also show checkmark
         completedTodaySet.add(taskKey);
       }
 
       await updateDoc(doc(firestore, "gameData", userId), updates);
       player.xp    = newXP;
       player.level = newLevel;
-      // Reactivate player on any quest completion
       await _markPlayerActive(userId);
-      syncNow(); // update derived stats + class immediately
+      syncNow();
       logActivity(userId, "gain", `Daily: ${task}`, expGain);
     } finally {
       isSyncingGameData = false;
@@ -597,7 +582,10 @@ function createActiveQuestRow(quest) {
   const row = document.createElement("div");
   row.className = "quest-row";
 
-  const catClass  = (quest.category || "").toLowerCase();
+  // category can be a string or an array — normalise for display
+  const catClass   = getCatClass(quest.category);
+  const catDisplay = getCatDisplay(quest.category);
+
   const startStr  = minsToTime(quest.startMin);
   const endStr    = minsToTime(quest.endMin);
   const daysStr   = (quest.days || []).join(", ");
@@ -607,7 +595,7 @@ function createActiveQuestRow(quest) {
   row.innerHTML = `
     <div class="quest-row-left">
       <div class="quest-title">${quest.title}</div>
-      <div class="quest-category ${catClass}">${quest.category}</div>
+      <div class="quest-category ${catClass}">${catDisplay}</div>
       <div class="quest-time-tag">${startStr} – ${endStr}</div>
       <div class="quest-days-tag">${daysStr}</div>
       <div class="quest-exp">${slots * 100} × lvl XP per run</div>
@@ -653,7 +641,6 @@ function createUrgentQuestRow(quest, player, userId, urgentWeek, currentWeek, we
   const weekXpCap  = 9000 * level;
   const capReached = weekXpEarned >= weekXpCap;
   const rawXP      = calcUrgentXP(player, quest.createdAt);
-  // XP this quest would actually award given the remaining cap room
   const effectiveXP = Math.max(0, Math.min(rawXP, weekXpCap - weekXpEarned));
 
   const xpDisplay = capReached
@@ -693,12 +680,10 @@ function createUrgentQuestRow(quest, player, userId, urgentWeek, currentWeek, we
       const freshPlayer  = data.player || {};
       const level        = freshPlayer.level ?? 1;
 
-      // ── Weekly XP cap: max 9000×lvl across all urgent completions ──
       const weekXpKey      = `urgentXpWeek_${currentWeek}`;
       const weekXpEarned   = data[weekXpKey] ?? 0;
       const weekXpCap      = 9000 * level;
       const rawXP          = calcUrgentXP(freshPlayer, quest.createdAt);
-      // Clamp so total earned this week never exceeds the cap
       const finalXP        = Math.max(0, Math.min(rawXP, weekXpCap - weekXpEarned));
 
       const { newLevel, newXP } = applyXPAndLevelUp(freshPlayer, finalXP);
@@ -707,7 +692,6 @@ function createUrgentQuestRow(quest, player, userId, urgentWeek, currentWeek, we
       const curInt  = freshPlayer.stats?.intelligence ?? 1;
       const uWeek   = data.quests?.urgentWeek || { week: currentWeek, quests: [] };
       const qIdx    = (uWeek.quests || []).findIndex(q => q.id === quest.id);
-      // Remove the completed quest from the list entirely
       if (qIdx !== -1) uWeek.quests.splice(qIdx, 1);
 
       const weekStatKey    = `statPointsWeek_${currentWeek}`;
@@ -718,10 +702,9 @@ function createUrgentQuestRow(quest, player, userId, urgentWeek, currentWeek, we
         "player.xp":         newXP,
         "player.level":      newLevel,
         "quests.urgentWeek": uWeek,
-        [weekXpKey]:         weekXpEarned + finalXP,  // track weekly XP total
+        [weekXpKey]:         weekXpEarned + finalXP,
         updatedAt:           Date.now()
       };
-      // Only grant stat points if cap not reached
       if (canGainStat) {
         updates["player.stats.strength"]     = curStr + 1;
         updates["player.stats.intelligence"] = curInt + 1;
@@ -731,12 +714,9 @@ function createUrgentQuestRow(quest, player, userId, urgentWeek, currentWeek, we
       await updateDoc(gameRef, updates);
       freshPlayer.xp    = newXP;
       freshPlayer.level = newLevel;
-      // Reactivate player on completion
       await _markPlayerActive(userId);
-      syncNow(); // update derived stats + class immediately
-      logActivity(userId, finalXP > 0 ? "gain" : "info",
-        `Urgent: ${quest.title}`, finalXP);
-      // Remove the row from the UI immediately
+      syncNow();
+      logActivity(userId, finalXP > 0 ? "gain" : "info", `Urgent: ${quest.title}`, finalXP);
       row.remove();
     } catch (err) {
       console.error("[urgentComplete]", err);
@@ -749,20 +729,11 @@ function createUrgentQuestRow(quest, player, userId, urgentWeek, currentWeek, we
   return row;
 }
 
-/**
- * Scan the current week's urgent quests and apply the −5000×lvl
- * failure penalty to any that are past their deadline and still
- * "pending" (i.e. never completed).
- *
- * A guard key (failedPenaltyApplied) prevents double-penalising.
- * Called on every load and refresh so penalties are caught promptly.
- */
 async function _checkUrgentExpiry(urgentWeek, currentWeek, userId) {
   const quests = urgentWeek?.week === currentWeek
     ? (urgentWeek.quests || [])
     : [];
 
-  // Find quests that are past deadline and still pending — no guard yet
   const toFail = quests.filter(q =>
     q.status === "pending" &&
     q.deadlineTs < Date.now() &&
@@ -777,20 +748,17 @@ async function _checkUrgentExpiry(urgentWeek, currentWeek, userId) {
     if (!snap.exists()) return;
 
     const data        = snap.data();
-
-    // Skip penalties while inactive
     if (data.player?.inactive === true) return;
 
     const freshPlayer = data.player || {};
     const level       = freshPlayer.level ?? 1;
     const uWeek       = data.quests?.urgentWeek || { week: currentWeek, quests: [] };
 
-    let   runningPlayer = { ...freshPlayer };  // accumulate multi-quest penalties
+    let   runningPlayer = { ...freshPlayer };
     const totalPenalty  = toFail.length * 5000 * level;
 
     const { newLevel, newXP } = applyXPAndLevelUp(runningPlayer, -totalPenalty);
 
-    // Mark each failed quest
     toFail.forEach(failed => {
       const idx = (uWeek.quests || []).findIndex(q => q.id === failed.id);
       if (idx !== -1) {
@@ -820,7 +788,6 @@ async function _checkUrgentExpiry(urgentWeek, currentWeek, userId) {
 // RENDER: URGENT QUESTS  (card 3)
 // ===============================
 function renderUrgentQuests(urgentWeek, currentWeek, player, userId, weekXpEarned = 0) {
-  // Check for expired quests and apply penalties before rendering
   _checkUrgentExpiry(urgentWeek, currentWeek, userId);
 
   const card = document.querySelector(".card:nth-child(3) .quest-list");
@@ -847,23 +814,16 @@ function renderUrgentQuests(urgentWeek, currentWeek, player, userId, weekXpEarne
 // IN-PROGRESS TAB — Active Quest runner
 // ═══════════════════════════════════════════════════════
 
-// Map of questId → { timerInterval, rowEl } for cleanup
 const _ipTimers = new Map();
 
-/**
- * Render the In Progress card.
- * Called once on load and re-called by the poller every 30s.
- */
 function renderInProgress(activeQuests, player, userId) {
   const container = document.querySelector(".in-progress .quest-list");
   if (!container) return;
 
-  // Show loading until first render
   if (!container.dataset.loaded) {
     container.innerHTML = `<div class="quest-empty" style="color:rgba(65,182,255,0.4);">Loading...</div>`;
   }
 
-  // Clear any running timers from old rows before wiping DOM
   _ipTimers.forEach(({ timerInterval }) => clearInterval(timerInterval));
   _ipTimers.clear();
 
@@ -871,17 +831,12 @@ function renderInProgress(activeQuests, player, userId) {
   container.dataset.loaded = "true";
   setListScrollable(container);
 
-  // Filter to quests that are relevant right now.
-  // Exclude quests rejected today (rejectedDateKey must match today).
   const todayKey = getTodayKey();
   const relevant = activeQuests.filter(q => {
     const phase = getQuestPhase(q);
     if (phase === "not-today" || phase === "too-early" || phase === "expired") return false;
-    // Hide if rejected today
     if (q.rejectedToday === true && q.rejectedDateKey === todayKey) return false;
-    // Hide if already completed today — prevents MISSED label on a finished quest
     if (q.completedToday === true && q.completedDateKey === todayKey) return false;
-    // Hide if expired penalty was already applied today (quest window is fully closed)
     if (q.expiredPenaltyDate === todayKey) return false;
     return true;
   });
@@ -897,20 +852,17 @@ function renderInProgress(activeQuests, player, userId) {
   });
 }
 
-/**
- * Build a single in-progress row with live timer + action buttons.
- */
 function buildInProgressRow(quest, player, userId) {
-  const phase         = getQuestPhase(quest);
+  const phase              = getQuestPhase(quest);
   const { startMs, endMs } = getTodaySchedule(quest);
-  const graceMs       = endMs + 30 * 60_000;
-  const catClass      = (quest.category || "").toLowerCase();
-  const baseXP        = calcActiveXP(quest, player);
-  const level         = player.level ?? 1;
-  // todayKey is stable for the lifetime of this row (same day)
-  const todayKey = getTodayKey();
-  // isAccepted is a function so tick() always reads the live quest object,
-  // not a stale snapshot captured at row-build time.
+  const graceMs            = endMs + 30 * 60_000;
+
+  // category can be a string or an array — normalise for display
+  const catClass   = getCatClass(quest.category);
+  const catDisplay = getCatDisplay(quest.category);
+
+  const baseXP    = calcActiveXP(quest, player);
+  const todayKey  = getTodayKey();
   const getIsAccepted = () =>
     quest.acceptedToday === true && quest.acceptedDateKey === todayKey;
 
@@ -924,11 +876,11 @@ function buildInProgressRow(quest, player, userId) {
   header.innerHTML = `<div class="ip-title">${quest.title}</div>`;
   row.appendChild(header);
 
-  // ── Category + Time on the same line ──
+  // ── Category + Time ──
   const metaRow = document.createElement("div");
   metaRow.style.cssText = "display:flex;align-items:center;gap:8px;";
   metaRow.innerHTML = `
-    <span class="ip-category ${catClass}">${quest.category}</span>
+    <span class="ip-category ${catClass}">${catDisplay}</span>
     <span class="ip-time" style="margin:0;">${minsToTime(quest.startMin)} – ${minsToTime(quest.endMin)}</span>
   `;
   row.appendChild(metaRow);
@@ -957,14 +909,10 @@ function buildInProgressRow(quest, player, userId) {
   actions.className = "ip-actions";
   row.appendChild(actions);
 
-  // ─────────────────────────────────────
-  // Timer tick function
-  // ─────────────────────────────────────
   function tick() {
     const now          = Date.now();
     const currentPhase = getQuestPhase(quest);
 
-    // Quest window fully closed — apply automatic penalties then remove row
     if (currentPhase === "expired") {
       clearInterval(timerHandle);
       _ipTimers.delete(quest.id);
@@ -973,31 +921,27 @@ function buildInProgressRow(quest, player, userId) {
       return;
     }
 
-    // Update bar + countdown based on phase
     let barPct   = 0;
     let cdText   = "";
     let cdClass  = "ip-countdown";
     let expiring = false;
 
     if (currentPhase === "accept-window") {
-      // Bar fills as accept window closes (30min window)
       const windowStart = startMs - 30 * 60_000;
       const elapsed     = now - windowStart;
       barPct = Math.min(100, (elapsed / (30 * 60_000)) * 100);
       cdText = `Accept by: ${fmtMs(startMs - now)}`;
 
     } else if (currentPhase === "late-accept" || currentPhase === "final-window") {
-      // Bar empties as quest end approaches
       const totalDur = endMs - startMs;
       const elapsed  = now - startMs;
       barPct = Math.max(0, 100 - (elapsed / totalDur) * 100);
 
       const remaining = endMs - now;
-      expiring = remaining < 10 * 60_000; // last 10 min
+      expiring = remaining < 10 * 60_000;
       cdText   = `Ends in: ${fmtMs(remaining)}`;
       cdClass  = expiring ? "ip-countdown expiring" : "ip-countdown";
 
-      // Recalculate XP penalty display
       if (!getIsAccepted()) {
         const penalty = calcLateAcceptPenalty(quest, player);
         xpLabel.textContent = penalty > 0
@@ -1006,7 +950,6 @@ function buildInProgressRow(quest, player, userId) {
       }
 
     } else if (currentPhase === "grace") {
-      // Bar fills as grace period runs out (30min)
       const elapsed = now - endMs;
       barPct = Math.min(100, (elapsed / (30 * 60_000)) * 100);
       barFill.classList.add("expiring");
@@ -1019,11 +962,9 @@ function buildInProgressRow(quest, player, userId) {
     countdown.className   = cdClass;
     countdown.textContent = cdText;
 
-    // Re-render buttons if phase changed
     _refreshButtons(actions, quest, player, userId, currentPhase, getIsAccepted(), baseXP, row);
   }
 
-  // Initial render
   let timerHandle;
   tick();
   timerHandle = setInterval(tick, 1000);
@@ -1032,12 +973,7 @@ function buildInProgressRow(quest, player, userId) {
   return row;
 }
 
-/**
- * Rebuild only the action buttons when phase changes.
- * Clears existing buttons first to avoid duplicates.
- */
 function _refreshButtons(actions, quest, player, userId, phase, isAccepted, baseXP, row) {
-  // Only rebuild if the phase+accepted combo actually changed
   const existingPhase = actions.dataset.phase;
   const newPhaseKey   = `${phase}-${isAccepted}`;
   if (existingPhase === newPhaseKey) return;
@@ -1046,7 +982,6 @@ function _refreshButtons(actions, quest, player, userId, phase, isAccepted, base
   actions.innerHTML = "";
 
   if (phase === "accept-window" && !isAccepted) {
-    // ── ACCEPT (on time, no penalty) + REJECT (no penalty) ──
     const acceptBtn = _makeBtn("ACCEPT", "ip-btn accept");
     const rejectBtn = _makeBtn("REJECT", "ip-btn reject");
     acceptBtn.onclick = () => _handleAccept(quest, player, userId, actions, row, false);
@@ -1055,14 +990,12 @@ function _refreshButtons(actions, quest, player, userId, phase, isAccepted, base
     actions.appendChild(rejectBtn);
 
   } else if (phase === "accept-window" && isAccepted) {
-    // Accepted during the accept window — show checkmark, waiting for quest to start
     const check = document.createElement("div");
     check.className   = "quest-checkmark";
     check.textContent = "✓";
     actions.appendChild(check);
 
   } else if (phase === "late-accept" && !isAccepted) {
-    // ── LATE ACCEPT (penalty shown) + REJECT (same penalty) ──
     const penalty   = calcLateAcceptPenalty(quest, player);
     const acceptBtn = _makeBtn(`ACCEPT LATE (−${penalty.toLocaleString()} XP)`, "ip-btn accept");
     const rejectBtn = _makeBtn(`REJECT (−${penalty.toLocaleString()} XP)`, "ip-btn reject");
@@ -1072,20 +1005,17 @@ function _refreshButtons(actions, quest, player, userId, phase, isAccepted, base
     actions.appendChild(rejectBtn);
 
   } else if (phase === "late-accept" && isAccepted) {
-    // Accepted — quest is running, Complete not yet available
     const badge = document.createElement("span");
     badge.className  = "quest-status-badge active";
     badge.textContent = "IN PROGRESS";
     actions.appendChild(badge);
 
   } else if ((phase === "final-window" || phase === "grace") && isAccepted) {
-    // ── COMPLETE — quest is in its finish window ──
     const completeBtn = _makeBtn("COMPLETE", "ip-btn complete");
     completeBtn.onclick = () => _handleComplete(quest, player, userId, row);
     actions.appendChild(completeBtn);
 
   } else if ((phase === "final-window" || phase === "grace") && !isAccepted) {
-    // Never accepted — missed window, show MISSED
     const badge = document.createElement("span");
     badge.className  = "quest-status-badge failed";
     badge.textContent = "MISSED";
@@ -1105,9 +1035,6 @@ function _makeBtn(label, className) {
 // ─────────────────────────────────────
 
 async function _handleAccept(quest, player, userId, actionsEl, row, isLate) {
-  // Immediately swap buttons for checkmark — no waiting for Firestore.
-  // Reset the phase key so _refreshButtons will re-evaluate on next tick
-  // and correctly show Complete when the phase advances to final-window.
   actionsEl.dataset.phase = "";
   actionsEl.innerHTML = "";
   const check = document.createElement("div");
@@ -1124,19 +1051,17 @@ async function _handleAccept(quest, player, userId, actionsEl, row, isLate) {
   const activeList  = data.quests?.active || [];
   const qIdx        = activeList.findIndex(q => q.id === quest.id);
 
-  // Mark accepted today with a dateKey so it survives page reloads/nav changes
   const todayKey = getTodayKey();
   if (qIdx !== -1) {
     activeList[qIdx].acceptedToday   = true;
     activeList[qIdx].acceptedDateKey = todayKey;
   }
-  quest.acceptedToday   = true;   // keep local in sync
+  quest.acceptedToday   = true;
   quest.acceptedDateKey = todayKey;
 
   const updates = { "quests.active": activeList, updatedAt: Date.now() };
 
   if (isLate) {
-    // Deduct late-accept penalty
     const penalty = calcLateAcceptPenalty(quest, freshPlayer);
     if (penalty > 0) {
       const { newLevel, newXP } = applyXPAndLevelUp(freshPlayer, -penalty);
@@ -1152,12 +1077,10 @@ async function _handleAccept(quest, player, userId, actionsEl, row, isLate) {
   }
 
   await updateDoc(gameRef, updates);
-  // Reactivate player — accepting a quest counts as activity
   await _markPlayerActive(userId);
 }
 
 async function _handleReject(quest, player, userId, row, timing) {
-  // Immediately remove the row from UI
   clearInterval(_ipTimers.get(quest.id)?.timerInterval);
   _ipTimers.delete(quest.id);
 
@@ -1170,7 +1093,6 @@ async function _handleReject(quest, player, userId, row, timing) {
   const activeList  = data.quests?.active || [];
   const qIdx        = activeList.findIndex(q => q.id === quest.id);
 
-  // Mark as rejected today with dateKey so it persists across reloads/nav
   const todayKeyR = getTodayKey();
   if (qIdx !== -1) {
     activeList[qIdx].rejectedToday   = true;
@@ -1180,21 +1102,17 @@ async function _handleReject(quest, player, userId, row, timing) {
   const updates = { "quests.active": activeList, updatedAt: Date.now() };
 
   if (timing === "late") {
-    // Rejecting late = same penalty as late-accepting
-    // (player chose to walk away after their window opened late)
     const penalty = calcLateAcceptPenalty(quest, freshPlayer);
     if (penalty > 0) {
       const { newLevel, newXP } = applyXPAndLevelUp(freshPlayer, -penalty);
       updates["player.xp"]    = newXP;
       updates["player.level"] = newLevel;
 
-      // Flash result briefly before removing row
       _showResult(row, `−${penalty.toLocaleString()} XP (rejected late)`, "loss");
       logActivity(userId, "loss", `Late reject: ${quest.title}`, -penalty);
       await updateDoc(gameRef, updates);
       setTimeout(async () => {
         row.remove();
-        // Refresh In Progress so "no quests" message shows immediately
         if (_ipPollData) {
           const freshSnap = await getDoc(doc(firestore, "gameData", userId));
           if (freshSnap.exists()) {
@@ -1207,13 +1125,10 @@ async function _handleReject(quest, player, userId, row, timing) {
     }
   }
 
-  // On-time reject — no penalty, remove immediately
   await updateDoc(gameRef, updates);
   row.remove();
 
-  // Immediately refresh In Progress so "no quests" message shows
   if (_ipPollData) {
-    // Re-fetch active list to get the updated rejectedToday flag
     const freshSnap = await getDoc(doc(firestore, "gameData", userId));
     if (freshSnap.exists()) {
       _ipPollData.activeQuests = freshSnap.data().quests?.active || [];
@@ -1238,11 +1153,6 @@ async function _handleComplete(quest, player, userId, row) {
   const todayKey = getTodayKey();
 
   if (qIdx !== -1) {
-    // Mark completed today with a dateKey so the poller knows
-    // this quest was FINISHED today — not just unaccepted.
-    // acceptedToday is reset to false so the quest resets for
-    // tomorrow, but completedDateKey tells renderInProgress
-    // to hide it (completed) rather than show it as MISSED.
     activeList[qIdx].acceptedToday    = false;
     activeList[qIdx].acceptedDateKey  = null;
     activeList[qIdx].completedToday   = true;
@@ -1257,9 +1167,7 @@ async function _handleComplete(quest, player, userId, row) {
   };
 
   // ── +1 to the quest's stat(s) ──
-  // category can be a single string (e.g. "Strength") OR an array
-  // (e.g. ["Stamina", "Health"] for the Sleep quest).
-  // Both cases are handled by normalising to a lowercase array first.
+  // category can be a single string OR an array (e.g. ["Stamina","Health"])
   const cats = Array.isArray(quest.category)
     ? quest.category.map(c => c.toLowerCase())
     : [String(quest.category).toLowerCase()];
@@ -1279,18 +1187,16 @@ async function _handleComplete(quest, player, userId, row) {
 
   await updateDoc(gameRef, updates);
   await _markPlayerActive(userId);
-  syncNow(); // update derived stats + class immediately
+  syncNow();
   logActivity(userId, "gain", `Active: ${quest.title}`, xpGain);
 
   _showResult(row, `+${xpGain.toLocaleString()} XP`, "gain");
 
-  // Remove row after brief flash, then refresh the whole In Progress panel
   setTimeout(async () => {
     clearInterval(_ipTimers.get(quest.id)?.timerInterval);
     _ipTimers.delete(quest.id);
     row.remove();
 
-    // Re-fetch and re-render so empty state or remaining quests show immediately
     if (_ipPollData) {
       const freshSnap = await getDoc(doc(firestore, "gameData", userId));
       if (freshSnap.exists()) {
@@ -1301,24 +1207,8 @@ async function _handleComplete(quest, player, userId, row) {
   }, 1800);
 }
 
-/**
- * Automatically apply the correct XP penalty when a quest window expires.
- *
- * Two cases:
- *   A) Quest was accepted but player never clicked Complete
- *      → failed to finish → −200 × level
- *
- *   B) Quest was never accepted before the window closed
- *      → missed entirely → −400 × level
- *
- * A guard key (expiredPenaltyDate) prevents the penalty being
- * applied more than once per quest per day (e.g. if the poller
- * fires multiple times after expiry).
- */
 async function _applyExpiredPenalty(quest, player, userId) {
   const todayKey = getTodayKey();
-
-  // Guard: already penalised today for this quest
   if (quest.expiredPenaltyDate === todayKey) return;
 
   try {
@@ -1327,8 +1217,6 @@ async function _applyExpiredPenalty(quest, player, userId) {
     if (!snap.exists()) return;
 
     const data        = snap.data();
-
-    // Skip penalty while inactive
     if (data.player?.inactive === true) return;
 
     const freshPlayer = data.player || {};
@@ -1336,26 +1224,20 @@ async function _applyExpiredPenalty(quest, player, userId) {
     const activeList  = data.quests?.active || [];
     const qIdx        = activeList.findIndex(q => q.id === quest.id);
 
-    // Check the live Firestore copy to avoid double-applying
     if (qIdx !== -1 && activeList[qIdx].expiredPenaltyDate === todayKey) return;
 
     const wasAccepted = quest.acceptedToday === true &&
                         quest.acceptedDateKey === todayKey;
 
-    // Penalty amount
-    const penalty = wasAccepted
-      ? 200 * level   // accepted but didn't finish
-      : 400 * level;  // never accepted
-
+    const penalty = wasAccepted ? 200 * level : 400 * level;
     const { newLevel, newXP } = applyXPAndLevelUp(freshPlayer, -penalty);
 
-    // Mark quest so we don't re-apply
     if (qIdx !== -1) {
       activeList[qIdx].expiredPenaltyDate = todayKey;
       activeList[qIdx].acceptedToday      = false;
       activeList[qIdx].acceptedDateKey    = null;
     }
-    quest.expiredPenaltyDate = todayKey; // local guard too
+    quest.expiredPenaltyDate = todayKey;
 
     await updateDoc(gameRef, {
       "player.xp":     newXP,
@@ -1366,8 +1248,7 @@ async function _applyExpiredPenalty(quest, player, userId) {
 
     const reason = wasAccepted ? "failed to finish" : "missed";
     console.log(`[activeQuest] Penalty −${penalty} XP (${reason}) for "${quest.title}"`);
-    logActivity(userId, "loss",
-      `Active ${reason}: ${quest.title}`, -penalty);
+    logActivity(userId, "loss", `Active ${reason}: ${quest.title}`, -penalty);
 
   } catch (err) {
     console.error("[activeQuest] _applyExpiredPenalty failed:", err);
@@ -1375,9 +1256,7 @@ async function _applyExpiredPenalty(quest, player, userId) {
 }
 
 function _showResult(row, text, type) {
-  // Remove any existing result label
   row.querySelector(".ip-result")?.remove();
-
   const el = document.createElement("div");
   el.className  = `ip-result ${type}`;
   el.textContent = text;
@@ -1386,10 +1265,8 @@ function _showResult(row, text, type) {
 
 // ─────────────────────────────────────
 // POLLER — refreshes In Progress every 30s
-// so newly-entering quests appear without
-// requiring a page reload
 // ─────────────────────────────────────
-let _ipPollData = null; // { activeQuests, player, userId }
+let _ipPollData = null;
 
 setInterval(() => {
   if (_ipPollData) {
@@ -1400,19 +1277,6 @@ setInterval(() => {
 // ===============================
 // INACTIVITY SYSTEM
 // ===============================
-/**
- * On every page load, checks if the player has been inactive for 7+ days.
- * If so, sets player.inactive = true which suppresses ALL daily, active,
- * and urgent penalties until the player reactivates.
- *
- * Reactivation ONLY happens when the player accepts or completes a quest
- * (via _markPlayerActive). Simply logging in does NOT reactivate.
- *
- * lastActiveDate is set on account creation and updated only by
- * _markPlayerActive — never by page load alone.
- *
- * Guard: lastInactivityCheckDate ensures this only writes once per day.
- */
 async function _checkInactivityStatus(userId) {
   try {
     const gameRef = doc(firestore, "gameData", userId);
@@ -1423,10 +1287,8 @@ async function _checkInactivityStatus(userId) {
     const freshPlayer = data.player || {};
     const todayKey    = getTodayKey();
 
-    // Already checked today
     if (freshPlayer.lastInactivityCheckDate === todayKey) return;
 
-    // First load grace — stamp today and treat as active
     if (!freshPlayer.lastActiveDate) {
       await updateDoc(gameRef, {
         "player.lastActiveDate":          todayKey,
@@ -1437,11 +1299,10 @@ async function _checkInactivityStatus(userId) {
       return;
     }
 
-    const lastActiveMs  = new Date(freshPlayer.lastActiveDate).getTime();
-    const daysSince     = Math.floor((Date.now() - lastActiveMs) / 86400000);
+    const lastActiveMs     = new Date(freshPlayer.lastActiveDate).getTime();
+    const daysSince        = Math.floor((Date.now() - lastActiveMs) / 86400000);
     const shouldBeInactive = daysSince >= 7;
 
-    // Only write if something changed
     if (freshPlayer.inactive !== shouldBeInactive ||
         freshPlayer.lastInactivityCheckDate !== todayKey) {
       await updateDoc(gameRef, {
@@ -1450,10 +1311,8 @@ async function _checkInactivityStatus(userId) {
         updatedAt: Date.now()
       });
       if (shouldBeInactive && !freshPlayer.inactive) {
-        // Just became inactive this check
         console.log(`[inactivity] Player inactive — ${daysSince} days since last quest activity`);
-        logActivity(userId, "info",
-          `Inactive for ${daysSince} days — penalties paused`, 0);
+        logActivity(userId, "info", `Inactive for ${daysSince} days — penalties paused`, 0);
       }
     }
 
@@ -1462,11 +1321,6 @@ async function _checkInactivityStatus(userId) {
   }
 }
 
-/**
- * Call this whenever a player accepts or completes any quest.
- * Clears the inactive flag and stamps lastActiveDate = today.
- * This is the ONLY way to reactivate — page load alone does not count.
- */
 async function _markPlayerActive(userId) {
   try {
     const gameRef = doc(firestore, "gameData", userId);
@@ -1474,15 +1328,14 @@ async function _markPlayerActive(userId) {
     if (!snap.exists()) return;
 
     const wasInactive = snap.data().player?.inactive === true;
+    const todayKey    = getTodayKey();
 
-    const todayKey = getTodayKey();
     await updateDoc(gameRef, {
       "player.inactive":       false,
       "player.lastActiveDate": todayKey,
       updatedAt:               Date.now()
     });
 
-    // Only log reactivation if the player was actually inactive before
     if (wasInactive) {
       console.log("[inactivity] Player reactivated via quest action");
       logActivity(userId, "info", "Returned from inactivity — penalties resumed", 0);
@@ -1495,53 +1348,32 @@ async function _markPlayerActive(userId) {
 // ===============================
 // DAILY PENALTY CHECK
 // ===============================
-/**
- * After midnight, penalise the player for every daily task
- * (hardcoded + custom) that was NOT completed the previous day.
- *
- * Penalty: −100 × level per uncompleted task.
- *
- * Guard: stored as quests.lastDailyPenaltyDate ("YYYY-MM-DD").
- * Only runs once per day — skipped if it already matches today.
- */
 async function _checkDailyPenalty(userId) {
   try {
     const gameRef = doc(firestore, "gameData", userId);
     const snap    = await getDoc(gameRef);
     if (!snap.exists()) return;
 
-    const data    = snap.data();
+    const data     = snap.data();
     const todayKey = getTodayKey();
 
-    // Already applied today's penalty check
     if (data.quests?.lastDailyPenaltyDate === todayKey) return;
 
-    // ── Clean stale per-day flags from active quests ──
-    // Flags like rejectedToday, completedToday, expiredPenaltyDate and
-    // acceptedToday are keyed to a specific date. Once the date changes
-    // they must be cleared so quests appear fresh the next day.
     const activeList = data.quests?.active || [];
     let   flagsChanged = false;
 
     activeList.forEach(q => {
       if (q.rejectedToday && q.rejectedDateKey !== todayKey) {
-        delete q.rejectedToday;
-        delete q.rejectedDateKey;
-        flagsChanged = true;
+        delete q.rejectedToday; delete q.rejectedDateKey; flagsChanged = true;
       }
       if (q.completedToday && q.completedDateKey !== todayKey) {
-        delete q.completedToday;
-        delete q.completedDateKey;
-        flagsChanged = true;
+        delete q.completedToday; delete q.completedDateKey; flagsChanged = true;
       }
       if (q.expiredPenaltyDate && q.expiredPenaltyDate !== todayKey) {
-        delete q.expiredPenaltyDate;
-        flagsChanged = true;
+        delete q.expiredPenaltyDate; flagsChanged = true;
       }
       if (q.acceptedToday && q.acceptedDateKey !== todayKey) {
-        q.acceptedToday   = false;
-        q.acceptedDateKey = null;
-        flagsChanged = true;
+        q.acceptedToday = false; q.acceptedDateKey = null; flagsChanged = true;
       }
     });
 
@@ -1550,35 +1382,23 @@ async function _checkDailyPenalty(userId) {
       console.log("[dailyCleanup] Cleared stale active quest flags");
     }
 
-    // Suppress penalty while player is inactive (7+ days no quest action)
     if (data.player?.inactive === true) {
-      await updateDoc(gameRef, {
-        "quests.lastDailyPenaltyDate": todayKey,
-        updatedAt: Date.now()
-      });
+      await updateDoc(gameRef, { "quests.lastDailyPenaltyDate": todayKey, updatedAt: Date.now() });
       return;
     }
 
-    // Grace: if lastDailyPenaltyDate has never been set, this is the player's
-    // first load with this feature. Just stamp today and skip — no penalty.
     if (!data.quests?.lastDailyPenaltyDate) {
-      await updateDoc(gameRef, {
-        "quests.lastDailyPenaltyDate": todayKey,
-        updatedAt: Date.now()
-      });
+      await updateDoc(gameRef, { "quests.lastDailyPenaltyDate": todayKey, updatedAt: Date.now() });
       return;
     }
 
-    // Get yesterday's key
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
     const yKey = `${yesterday.getFullYear()}-${String(yesterday.getMonth()+1).padStart(2,"0")}-${String(yesterday.getDate()).padStart(2,"0")}`;
 
-    // What was completed yesterday
-    const dailyCompleted = data.quests?.dailyCompleted || {};
+    const dailyCompleted     = data.quests?.dailyCompleted || {};
     const completedYesterday = new Set(dailyCompleted[yKey] || []);
 
-    // Build full task list (hardcoded + custom saved quests)
     const savedCustom = data.quests?.daily || [];
     const allTasks = [];
 
@@ -1591,17 +1411,12 @@ async function _checkDailyPenalty(userId) {
       allTasks.push(_dailyKey(q.text, q.category));
     });
 
-    // Count uncompleted tasks from yesterday
     const uncompleted = allTasks.filter(key => !completedYesterday.has(key));
-
     const freshPlayer = data.player || {};
     const level       = freshPlayer.level ?? 1;
     const penalty     = uncompleted.length * 100 * level;
 
-    const updates = {
-      "quests.lastDailyPenaltyDate": todayKey,
-      updatedAt: Date.now()
-    };
+    const updates = { "quests.lastDailyPenaltyDate": todayKey, updatedAt: Date.now() };
 
     if (penalty > 0) {
       const { newLevel, newXP } = applyXPAndLevelUp(freshPlayer, -penalty);
@@ -1623,40 +1438,24 @@ async function _checkDailyPenalty(userId) {
 // ===============================
 // WEEK ROLLOVER
 // ===============================
-/**
- * Checks whether the stored urgentWeek belongs to a previous week.
- * If so:
- *   1. Applies −5000×lvl penalty for any quests that were still pending
- *      in the old week (they failed to be completed).
- *   2. Promotes urgentNextWeek into urgentWeek for the new week.
- *   3. Clears urgentNextWeek.
- *
- * Guard: only runs if urgentWeek.week !== currentWeek AND
- *        the rollover hasn't already been processed this week
- *        (tracked via quests.lastRolloverWeek).
- */
 async function _checkWeekRollover(userId) {
   try {
     const gameRef = doc(firestore, "gameData", userId);
     const snap    = await getDoc(gameRef);
     if (!snap.exists()) return;
 
-    const data        = snap.data();
-    const currentWeek = getISOWeek(new Date());
-    const urgentWeek  = data.quests?.urgentWeek    || { week: "", quests: [] };
-    const urgentNext  = data.quests?.urgentNextWeek || [];
+    const data         = snap.data();
+    const currentWeek  = getISOWeek(new Date());
+    const urgentWeek   = data.quests?.urgentWeek    || { week: "", quests: [] };
+    const urgentNext   = data.quests?.urgentNextWeek || [];
     const lastRollover = data.quests?.lastRolloverWeek || "";
 
-    // Nothing to do — already on current week or already rolled over
     if (urgentWeek.week === currentWeek) return;
     if (lastRollover === currentWeek)    return;
 
     const freshPlayer = data.player || {};
     const level       = freshPlayer.level ?? 1;
-
-    // ── Penalise any quests that were still pending at end of old week ──
-    // Skip if player is inactive — no punishment for absence
-    const isInactive = data.player?.inactive === true;
+    const isInactive  = data.player?.inactive === true;
 
     const failedQuests = isInactive ? [] : (urgentWeek.quests || []).filter(
       q => q.status === "pending" && !q.failedPenaltyApplied
@@ -1678,13 +1477,11 @@ async function _checkWeekRollover(userId) {
         -totalPenalty);
     }
 
-    // ── Promote next-week queue into current week ──
-    // Reset deadlines relative to now so they count from the new week start
     const promoted = urgentNext.map(q => ({
       ...q,
-      status:    "pending",
-      createdAt: Date.now(),
-      deadlineTs: Date.now() + q.deadlineDays * 86400000,
+      status:               "pending",
+      createdAt:            Date.now(),
+      deadlineTs:           Date.now() + q.deadlineDays * 86400000,
       failedPenaltyApplied: false
     }));
 
@@ -1694,7 +1491,6 @@ async function _checkWeekRollover(userId) {
     updates["updatedAt"]               = Date.now();
 
     await updateDoc(gameRef, updates);
-
     console.log(`[weekRollover] Week rolled to ${currentWeek}. Promoted ${promoted.length} quest(s) from queue.`);
 
   } catch (err) {
@@ -1707,7 +1503,6 @@ async function _checkWeekRollover(userId) {
 // ===============================
 onAuthStateChanged(auth, async (user) => {
   if (!user) {
-    // Clear all In Progress timers on logout to prevent stale intervals
     _ipTimers.forEach(({ timerInterval }) => clearInterval(timerInterval));
     _ipTimers.clear();
     _ipPollData = null;
@@ -1726,24 +1521,20 @@ onAuthStateChanged(auth, async (user) => {
   const urgentWeek  = quests.urgentWeek || { week: "", quests: [] };
   const currentWeek = getISOWeek(new Date());
 
-  // Store for poller
   _ipPollData = { activeQuests: activeList, player, userId: user.uid };
 
-  // Build the set of daily tasks already completed today
-  const todayKey           = getTodayKey();
-  const dailyCompleted     = gameData.quests?.dailyCompleted || {};
-  const completedTodayArr  = dailyCompleted[todayKey] || [];
-  const completedTodaySet  = new Set(completedTodayArr);
+  const todayKey          = getTodayKey();
+  const dailyCompleted    = gameData.quests?.dailyCompleted || {};
+  const completedTodayArr = dailyCompleted[todayKey] || [];
+  const completedTodaySet = new Set(completedTodayArr);
 
-  // Check inactive status, daily penalty and week rollover before rendering
   await _checkInactivityStatus(user.uid);
   await _checkDailyPenalty(user.uid);
   await _checkWeekRollover(user.uid);
 
-  // Re-fetch after potential rollover so we render the updated data
-  const freshDoc     = await getDoc(doc(firestore, "gameData", user.uid));
-  const freshData    = freshDoc.exists() ? freshDoc.data() : gameData;
-  const freshUrgent  = freshData.quests?.urgentWeek || { week: "", quests: [] };
+  const freshDoc    = await getDoc(doc(firestore, "gameData", user.uid));
+  const freshData   = freshDoc.exists() ? freshDoc.data() : gameData;
+  const freshUrgent = freshData.quests?.urgentWeek || { week: "", quests: [] };
 
   const weekXpKey    = `urgentXpWeek_${currentWeek}`;
   const weekXpEarned = freshData[weekXpKey] ?? 0;
@@ -1756,9 +1547,6 @@ onAuthStateChanged(auth, async (user) => {
 
 // ===============================
 // EXPORTED REFRESH
-// Called by y-createQuest.js after
-// any add or delete so the main
-// quest cards update immediately.
 // ===============================
 export async function refreshQuestCards() {
   const user = auth.currentUser;
@@ -1776,19 +1564,16 @@ export async function refreshQuestCards() {
   const urgentWeek  = quests.urgentWeek || { week: "", quests: [] };
   const currentWeek = getISOWeek(new Date());
 
-  // Keep poller data in sync too
   _ipPollData = { activeQuests: activeList, player, userId: user.uid };
 
   const todayKey          = getTodayKey();
   const dailyCompleted    = quests.dailyCompleted || {};
   const completedTodaySet = new Set(dailyCompleted[todayKey] || []);
 
-  // Check inactive status, daily penalty and week rollover before rendering
   await _checkInactivityStatus(user.uid);
   await _checkDailyPenalty(user.uid);
   await _checkWeekRollover(user.uid);
 
-  // Re-fetch after potential rollover
   const freshDoc2    = await getDoc(doc(firestore, "gameData", user.uid));
   const freshData2   = freshDoc2.exists() ? freshDoc2.data() : gameData;
   const freshUrgent2 = freshData2.quests?.urgentWeek || { week: "", quests: [] };
