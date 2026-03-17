@@ -27,9 +27,15 @@
  *
  * Guard: gameData.evaluationDone = true prevents re-evaluation
  *
- * Sleep Quest:
+ * Sleep Quest (MANDATORY):
  *   After the 5 habit questions, a sleep time question is shown.
  *   The answer creates an 8-hour active quest named "Sleep" in quests.active.
+ *   title:    "Sleep"
+ *   category: ["Stamina", "Health"]
+ *   slots:    always 16 (fixed 8-hour / 30-min slots — NOT endMin-startMin
+ *             because sleep crosses midnight making that subtraction negative)
+ *   If the player is cut off mid-evaluation, defaults to 10:00 PM (22 * 60).
+ *   There is no skip option — sleep quest is always created.
  */
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-app.js";
@@ -38,8 +44,7 @@ import {
   getFirestore,
   doc,
   getDoc,
-  updateDoc,
-  arrayUnion
+  updateDoc
 } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-firestore.js";
 
 const firebaseConfig = {
@@ -70,7 +75,9 @@ function goTo(page) {
 // ===============================
 // CONSTANTS
 // ===============================
-const TIMER_SECONDS = 10;
+const TIMER_SECONDS  = 10;
+const SLEEP_DURATION = 8 * 60;   // 480 minutes
+const DAY_MINUTES    = 24 * 60;  // 1440 minutes
 
 // ===============================
 // HABIT QUESTIONS
@@ -126,19 +133,21 @@ const HABIT_QUESTIONS = [
 
 // ===============================
 // SLEEP TIME OPTIONS
-// Shown after the 5 habit questions.
-// Selecting a time stores the bedtime as minutes-from-midnight
-// and schedules an 8-hour "Sleep" quest.
+// Shown after the 5 habit questions. MANDATORY — no skip.
+// startMin = minutes from midnight.
+// endMin   = (startMin + 480) % 1440  — wraps correctly past midnight.
+// slots    = always 16 (fixed, NOT derived from endMin - startMin).
+// Default fallback: 10:00 PM = 22 * 60 = 1320
 // ===============================
 const SLEEP_TIME_OPTIONS = [
-  { label: "8:00 PM",  startMin: 20 * 60 },       // 1200
-  { label: "9:00 PM",  startMin: 21 * 60 },       // 1260
-  { label: "10:00 PM", startMin: 22 * 60 },       // 1320
-  { label: "11:00 PM", startMin: 23 * 60 },       // 1380
-  { label: "12:00 AM", startMin: 0  },            // 0  (midnight)
-  { label: "1:00 AM",  startMin: 1  * 60 },       // 60
-  { label: "2:00 AM",  startMin: 2  * 60 },       // 120
-  { label: "3:00 AM",  startMin: 3  * 60 }        // 180
+  { label: "8:00 PM",  startMin: 20 * 60 },  // 1200 → ends 4:00 AM  (240)
+  { label: "9:00 PM",  startMin: 21 * 60 },  // 1260 → ends 5:00 AM  (300)
+  { label: "10:00 PM", startMin: 22 * 60 },  // 1320 → ends 6:00 AM  (360)
+  { label: "11:00 PM", startMin: 23 * 60 },  // 1380 → ends 7:00 AM  (420)
+  { label: "12:00 AM", startMin: 0        }, // 0    → ends 8:00 AM  (480)
+  { label: "1:00 AM",  startMin: 1  * 60  }, // 60   → ends 9:00 AM  (540)
+  { label: "2:00 AM",  startMin: 2  * 60  }, // 120  → ends 10:00 AM (600)
+  { label: "3:00 AM",  startMin: 3  * 60  }  // 180  → ends 11:00 AM (660)
 ];
 
 // ===============================
@@ -151,61 +160,49 @@ function generateMathQuestions() {
   // ── Tier 1 (Q1–2): Basic arithmetic ──
   {
     const a = rand(12, 30), b = rand(8, 25);
-    const ans = a * b;
-    questions.push(makeMath(`${a} × ${b} = ?`, ans, 15, 0));
+    questions.push(makeMath(`${a} × ${b} = ?`, a * b, 15, 0));
   }
   {
     const a = rand(100, 999), b = rand(10, 99);
-    const ans = a + b;
-    questions.push(makeMath(`${a} + ${b} = ?`, ans, 200, 0));
+    questions.push(makeMath(`${a} + ${b} = ?`, a + b, 200, 0));
   }
 
   // ── Tier 2 (Q3–4): Fractions + percentages ──
   {
-    const pct = [15, 20, 25, 30, 35, 40, 45, 50][rand(0,7)];
-    const base = [80, 120, 160, 200, 240, 300][rand(0,5)];
-    const ans = (pct / 100) * base;
-    questions.push(makeMath(`What is ${pct}% of ${base}?`, ans, 50, 0));
+    const pct  = [15, 20, 25, 30, 35, 40, 45, 50][rand(0, 7)];
+    const base = [80, 120, 160, 200, 240, 300][rand(0, 5)];
+    questions.push(makeMath(`What is ${pct}% of ${base}?`, (pct / 100) * base, 50, 0));
   }
   {
-    const num = rand(1, 8), den = rand(2, 9) + 1;
-    const mult = rand(2, 6);
-    const ans = Math.round((num / den) * mult * 100) / 100;
-    questions.push(makeMath(
-      `(${num}/${den}) × ${mult} = ? (round to 2 decimals)`,
-      ans, 3, 2
-    ));
+    const num  = rand(1, 8), den = rand(2, 9) + 1, mult = rand(2, 6);
+    const ans  = Math.round((num / den) * mult * 100) / 100;
+    questions.push(makeMath(`(${num}/${den}) × ${mult} = ? (round to 2 decimals)`, ans, 3, 2));
   }
 
   // ── Tier 3 (Q5–6): Algebra ──
   {
-    const a = rand(2, 8), b = rand(5, 20);
-    const ans = rand(3, 12);
-    const rhs = a * ans + b;
-    questions.push(makeMath(`Solve: ${a}x + ${b} = ${rhs}  →  x = ?`, ans, 5, 0));
+    const a = rand(2, 8), b = rand(5, 20), ans = rand(3, 12);
+    questions.push(makeMath(`Solve: ${a}x + ${b} = ${a * ans + b}  →  x = ?`, ans, 5, 0));
   }
   {
-    const a = rand(2, 6), b = rand(1, 5);
-    const ans = rand(2, 8);
-    const rhs = a * ans - b;
-    questions.push(makeMath(`Solve: ${a}x − ${b} = ${rhs}  →  x = ?`, ans, 5, 0));
+    const a = rand(2, 6), b = rand(1, 5), ans = rand(2, 8);
+    questions.push(makeMath(`Solve: ${a}x − ${b} = ${a * ans - b}  →  x = ?`, ans, 5, 0));
   }
 
   // ── Tier 4 (Q7–8): Quadratics + exponents ──
   {
     const base = rand(2, 6), exp = rand(3, 5);
-    const ans = Math.pow(base, exp);
+    const ans  = Math.pow(base, exp);
     questions.push(makeMath(`${base}^${exp} = ?`, ans, ans * 0.6, 0));
   }
   {
-    const r1 = rand(1, 7), r2 = rand(1, 7);
-    const b = -(r1 + r2), c = r1 * r2;
+    const r1   = rand(1, 7), r2 = rand(1, 7);
+    const b    = -(r1 + r2), c = r1 * r2;
     const bStr = b < 0 ? `− ${Math.abs(b)}` : `+ ${b}`;
     const cStr = c < 0 ? `− ${Math.abs(c)}` : `+ ${c}`;
-    const ans = Math.max(r1, r2);
     questions.push(makeMath(
       `x² ${bStr}x ${cStr} = 0  →  larger root = ?`,
-      ans, 5, 0
+      Math.max(r1, r2), 5, 0
     ));
   }
 
@@ -216,10 +213,10 @@ function generateMathQuestions() {
     questions.push(makeMath(`${a}×${b} + ${c}×${b} = ?  (factor first)`, ans, ans * 0.5, 0));
   }
   {
-    const principal = [1000, 2000, 5000][rand(0,2)];
-    const rate = [5, 8, 10][rand(0,2)];
-    const years = rand(2, 4);
-    const ans = Math.round(principal * Math.pow(1 + rate/100, years));
+    const principal = [1000, 2000, 5000][rand(0, 2)];
+    const rate      = [5, 8, 10][rand(0, 2)];
+    const years     = rand(2, 4);
+    const ans       = Math.round(principal * Math.pow(1 + rate / 100, years));
     questions.push(makeMath(
       `Compound interest: P=${principal}, r=${rate}%, t=${years} yrs. Final amount?`,
       ans, principal * 0.4, 0
@@ -231,10 +228,10 @@ function generateMathQuestions() {
 
 /**
  * Build a math question object with 4 shuffled choices.
- * @param {string} text        — question string
- * @param {number} answer      — correct answer
- * @param {number} spread      — range for wrong answers
- * @param {number} decimals    — decimal places
+ * @param {string} text     — question string
+ * @param {number} answer   — correct answer
+ * @param {number} spread   — range for wrong answers
+ * @param {number} decimals — decimal places
  */
 function makeMath(text, answer, spread, decimals) {
   const round = n => decimals > 0
@@ -245,10 +242,9 @@ function makeMath(text, answer, spread, decimals) {
   const wrongs = new Set();
 
   while (wrongs.size < 3) {
-    let wrong;
     const offset = rand(1, Math.max(2, Math.floor(spread)));
     const sign   = Math.random() < 0.5 ? 1 : -1;
-    wrong = round(answer + sign * offset);
+    const wrong  = round(answer + sign * offset);
     if (wrong !== answer && wrong > 0) wrongs.add(wrong);
   }
 
@@ -294,9 +290,7 @@ function scoreToStat(score) {
  * Calculate BMI-based physical score (0–25)
  */
 function calcPhysicalScore(heightCm, weightKg) {
-  const heightM = heightCm / 100;
-  const bmi     = weightKg / (heightM * heightM);
-
+  const bmi = weightKg / Math.pow(heightCm / 100, 2);
   if (bmi >= 18.5 && bmi <= 24.9) return 25;
   if (bmi >= 17.0 && bmi <  18.5) return 20;
   if (bmi >= 25.0 && bmi <= 27.4) return 20;
@@ -319,30 +313,33 @@ function getClass(level) {
 // ===============================
 // EVALUATION STATE
 // ===============================
-let _userId       = null;
-let _phase        = 0;
-let _habitScore   = 0;
-let _physScore    = 0;
-let _intelScore   = 0;
-let _qIndex       = 0;
-let _mathQs       = [];
-let _timerHandle  = null;
-let _timerLeft    = TIMER_SECONDS;
-let _answered     = false;
-let _phaseIntro   = true;
+let _userId             = null;
+let _phase              = 0;
+let _habitScore         = 0;
+let _physScore          = 0;
+let _intelScore         = 0;
+let _qIndex             = 0;
+let _mathQs             = [];
+let _timerHandle        = null;
+let _timerLeft          = TIMER_SECONDS;
+let _answered           = false;
+let _phaseIntro         = true;
 let _evaluationComplete = false;
 
-// Sleep quest state — set during the sleep time question
-let _sleepStartMin = null;   // minutes from midnight (or null if skipped)
+// Sleep quest bedtime in minutes from midnight.
+// Pre-set to 10:00 PM (1320) as a safe fallback —
+// if the player is cut off before answering the sleep question,
+// the quest still saves with a sensible default.
+let _sleepStartMin = 22 * 60;  // 1320
 
 // ===============================
 // DOM HELPERS
 // ===============================
-const content     = () => document.getElementById("eval-content");
-const timerWrap   = () => document.getElementById("eval-timer-wrap");
-const timerBar    = () => document.getElementById("eval-timer-bar");
-const timerLabel  = () => document.getElementById("eval-timer-label");
-const progressEl  = () => document.getElementById("eval-progress");
+const content    = () => document.getElementById("eval-content");
+const timerWrap  = () => document.getElementById("eval-timer-wrap");
+const timerBar   = () => document.getElementById("eval-timer-bar");
+const timerLabel = () => document.getElementById("eval-timer-label");
+const progressEl = () => document.getElementById("eval-progress");
 
 function updatePhaseIndicator() {
   document.querySelectorAll(".phase-dot").forEach((dot, i) => {
@@ -365,15 +362,15 @@ function startTimer(onExpire) {
   _timerLeft = TIMER_SECONDS;
   _answered  = false;
 
-  timerWrap().style.display = "block";
+  timerWrap().style.display   = "block";
   timerBar().style.transition = "none";
-  timerBar().style.width = "100%";
+  timerBar().style.width      = "100%";
   timerBar().classList.remove("warning", "critical");
-  timerLabel().textContent = `${TIMER_SECONDS}s`;
+  timerLabel().textContent    = `${TIMER_SECONDS}s`;
 
-  timerBar().offsetHeight;
+  timerBar().offsetHeight; // force reflow before starting transition
   timerBar().style.transition = `width ${TIMER_SECONDS}s linear`;
-  timerBar().style.width = "0%";
+  timerBar().style.width      = "0%";
 
   _timerHandle = setInterval(() => {
     _timerLeft--;
@@ -451,7 +448,7 @@ function showWarningScreen() {
             🏆 &nbsp;Starting stats range from <strong style="color:#41ff88;">1 to 15</strong> depending on performance
           </div>
           <div class="warn-item">
-            😴 &nbsp;A <strong style="color:#41b6ff;">Sleep</strong> active quest will be automatically created based on your bedtime
+            😴 &nbsp;You <strong style="color:#41b6ff;">must choose your bedtime</strong> — a Sleep quest (Stamina + Health) will be created automatically
           </div>
           <div class="warn-item">
             📵 &nbsp;Do not refresh, navigate away, or close this tab during evaluation
@@ -515,24 +512,24 @@ function showPhaseIntro() {
 
   const phases = [
     {
-      icon: "🏃",
-      title: "PHASE 1 — HABITS",
-      desc: "Answer 5 questions about your daily lifestyle and habits. Your responses will determine your starting Strength stat. You will also be asked about your bedtime to set up your Sleep quest.",
-      warn: "Each question has a 10-second timer. Unanswered questions score 0.",
+      icon:    "🏃",
+      title:   "PHASE 1 — HABITS",
+      desc:    "Answer 5 questions about your daily lifestyle and habits. Your responses will determine your starting Strength stat. You will also choose your bedtime to set up your mandatory Sleep quest.",
+      warn:    "Each question has a 10-second timer. Unanswered questions score 0.",
       btnText: "BEGIN HABITS PHASE"
     },
     {
-      icon: "⚖️",
-      title: "PHASE 2 — PHYSICAL",
-      desc: "Enter your height and weight. Your BMI will be used to calculate your physical conditioning score, contributing to Strength.",
-      warn: "Enter accurate values for the best assessment.",
+      icon:    "⚖️",
+      title:   "PHASE 2 — PHYSICAL",
+      desc:    "Enter your height and weight. Your BMI will be used to calculate your physical conditioning score, contributing to Strength.",
+      warn:    "Enter accurate values for the best assessment.",
       btnText: "BEGIN PHYSICAL PHASE"
     },
     {
-      icon: "🧠",
-      title: "PHASE 3 — INTELLIGENCE",
-      desc: "Answer 10 math questions of increasing difficulty. Questions range from basic arithmetic to complex multi-step problems. This determines your starting Intelligence stat.",
-      warn: "Each question has a 10-second timer. Questions get harder — stay focused!",
+      icon:    "🧠",
+      title:   "PHASE 3 — INTELLIGENCE",
+      desc:    "Answer 10 math questions of increasing difficulty. Questions range from basic arithmetic to complex multi-step problems. This determines your starting Intelligence stat.",
+      warn:    "Each question has a 10-second timer. Questions get harder — stay focused!",
       btnText: "BEGIN INTELLIGENCE PHASE"
     }
   ];
@@ -551,20 +548,16 @@ function showPhaseIntro() {
 
   document.getElementById("phase-start-btn").addEventListener("click", () => {
     _phaseIntro = false;
-    _qIndex = 0;
-    if (_phase === 0) showHabitQuestion();
+    _qIndex     = 0;
+    if      (_phase === 0) showHabitQuestion();
     else if (_phase === 1) showPhysicalInput();
-    else if (_phase === 2) {
-      _mathQs = generateMathQuestions();
-      showMathQuestion();
-    }
+    else if (_phase === 2) { _mathQs = generateMathQuestions(); showMathQuestion(); }
   });
 
-  setProgress(_phase === 0
-    ? "Evaluation begins — 3 phases total"
-    : _phase === 1
-    ? "Phase 1 complete — moving to Physical"
-    : "Phase 2 complete — final phase"
+  setProgress(
+    _phase === 0 ? "Evaluation begins — 3 phases total"    :
+    _phase === 1 ? "Phase 1 complete — moving to Physical" :
+                   "Phase 2 complete — final phase"
   );
 }
 
@@ -572,7 +565,6 @@ function showPhaseIntro() {
 // PHASE 1 — HABITS
 // ===============================
 function showHabitQuestion() {
-  // After the 5 habit questions, show the sleep time question before advancing
   if (_qIndex >= HABIT_QUESTIONS.length) {
     showSleepTimeQuestion();
     return;
@@ -589,8 +581,9 @@ function showHabitQuestion() {
   `;
 
   const choicesEl = document.getElementById("choices");
+
   q.choices.forEach((choice) => {
-    const btn = document.createElement("button");
+    const btn       = document.createElement("button");
     btn.className   = "eval-choice";
     btn.textContent = choice.text;
     btn.addEventListener("click", () => {
@@ -600,10 +593,7 @@ function showHabitQuestion() {
       _habitScore += choice.points;
       choicesEl.querySelectorAll(".eval-choice").forEach(b => b.disabled = true);
       btn.classList.add("selected");
-      setTimeout(() => {
-        _qIndex++;
-        showHabitQuestion();
-      }, 600);
+      setTimeout(() => { _qIndex++; showHabitQuestion(); }, 600);
     });
     choicesEl.appendChild(btn);
   });
@@ -611,26 +601,23 @@ function showHabitQuestion() {
   startTimer(() => {
     _answered = true;
     choicesEl.querySelectorAll(".eval-choice").forEach(b => {
-      b.disabled = true;
+      b.disabled      = true;
       b.style.opacity = "0.3";
     });
-    setTimeout(() => {
-      _qIndex++;
-      showHabitQuestion();
-    }, 800);
+    setTimeout(() => { _qIndex++; showHabitQuestion(); }, 800);
   });
 }
 
 // ===============================
-// SLEEP TIME QUESTION
-// Shown after the 5 habit questions.
-// No timer penalty — this is purely for quest setup.
+// SLEEP TIME QUESTION (MANDATORY)
+// No timer. Player MUST select a time — no skip button.
+// Sets _sleepStartMin, then advances to Phase 2.
 // ===============================
 function showSleepTimeQuestion() {
   stopTimer();
   timerWrap().style.display = "none";
   updatePhaseIndicator();
-  setProgress("Habits — Bonus: Sleep Schedule");
+  setProgress("Habits — Sleep Schedule (Required)");
 
   content().innerHTML = `
     <div class="eval-question-num">HABITS · SLEEP SCHEDULE</div>
@@ -643,46 +630,28 @@ function showSleepTimeQuestion() {
       margin-bottom:16px;
       text-align:center;
     ">
-      😴 &nbsp;An 8-hour <strong style="color:#41b6ff;">Sleep</strong> active quest will be created based on your answer.
+      😴 &nbsp;An 8-hour <strong style="color:#41b6ff;">Sleep</strong> quest
+      (Stamina + Health) will be created based on your answer.
       This does not affect your score.
     </div>
-    <div class="eval-choices" id="sleep-choices" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;"></div>
-    <button
-      id="sleep-skip-btn"
-      style="
-        margin-top:14px;
-        background:transparent;
-        border:1px solid rgba(255,255,255,0.1);
-        color:rgba(217,238,252,0.35);
-        font-family:'Orbitron',system-ui;
-        font-size:8px;letter-spacing:1px;
-        padding:8px 20px;border-radius:8px;cursor:pointer;
-      "
-    >SKIP — SET UP LATER</button>
+    <div class="eval-choices" id="sleep-choices"
+      style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+    </div>
   `;
 
   const choicesEl = document.getElementById("sleep-choices");
 
   SLEEP_TIME_OPTIONS.forEach((opt) => {
-    const btn = document.createElement("button");
+    const btn       = document.createElement("button");
     btn.className   = "eval-choice";
     btn.textContent = opt.label;
     btn.addEventListener("click", () => {
       choicesEl.querySelectorAll(".eval-choice").forEach(b => b.disabled = true);
       btn.classList.add("selected");
-      _sleepStartMin = opt.startMin;
-      setTimeout(() => {
-        _phase = 1;
-        showPhaseIntro();
-      }, 600);
+      _sleepStartMin = opt.startMin;  // overwrite 10 PM default with player's choice
+      setTimeout(() => { _phase = 1; showPhaseIntro(); }, 600);
     });
     choicesEl.appendChild(btn);
-  });
-
-  document.getElementById("sleep-skip-btn").addEventListener("click", () => {
-    _sleepStartMin = null;  // no quest created
-    _phase = 1;
-    showPhaseIntro();
   });
 }
 
@@ -701,11 +670,13 @@ function showPhysicalInput() {
     <div class="eval-input-group">
       <div>
         <div class="eval-input-label">HEIGHT (cm)</div>
-        <input class="eval-input" type="number" id="height-input" placeholder="e.g. 170" min="100" max="250" />
+        <input class="eval-input" type="number" id="height-input"
+          placeholder="e.g. 170" min="100" max="250" />
       </div>
       <div>
         <div class="eval-input-label">WEIGHT (kg)</div>
-        <input class="eval-input" type="number" id="weight-input" placeholder="e.g. 65" min="30" max="300" />
+        <input class="eval-input" type="number" id="weight-input"
+          placeholder="e.g. 65" min="30" max="300" />
       </div>
     </div>
     <div class="eval-error" id="physical-error"></div>
@@ -737,15 +708,15 @@ function showMathQuestion() {
     return;
   }
 
-  const q = _mathQs[_qIndex];
+  const q    = _mathQs[_qIndex];
+  const tier =
+    _qIndex < 2 ? "BASIC"        :
+    _qIndex < 4 ? "INTERMEDIATE" :
+    _qIndex < 6 ? "ADVANCED"     :
+    _qIndex < 8 ? "EXPERT"       : "MASTER";
+
   updatePhaseIndicator();
   setProgress(`Intelligence — Question ${_qIndex + 1} of ${_mathQs.length}`);
-
-  const tier = _qIndex < 2 ? "BASIC"
-             : _qIndex < 4 ? "INTERMEDIATE"
-             : _qIndex < 6 ? "ADVANCED"
-             : _qIndex < 8 ? "EXPERT"
-             : "MASTER";
 
   content().innerHTML = `
     <div class="eval-question-num">INTELLIGENCE · Q${_qIndex + 1} / ${_mathQs.length} · ${tier}</div>
@@ -756,14 +727,13 @@ function showMathQuestion() {
   const choicesEl = document.getElementById("choices");
 
   q.choices.forEach(choice => {
-    const btn = document.createElement("button");
+    const btn       = document.createElement("button");
     btn.className   = "eval-choice";
     btn.textContent = choice.text;
     btn.addEventListener("click", () => {
       if (_answered) return;
       _answered = true;
       stopTimer();
-
       choicesEl.querySelectorAll(".eval-choice").forEach(b => b.disabled = true);
 
       if (choice.correct) {
@@ -776,10 +746,7 @@ function showMathQuestion() {
         });
       }
 
-      setTimeout(() => {
-        _qIndex++;
-        showMathQuestion();
-      }, 900);
+      setTimeout(() => { _qIndex++; showMathQuestion(); }, 900);
     });
     choicesEl.appendChild(btn);
   });
@@ -788,16 +755,10 @@ function showMathQuestion() {
     _answered = true;
     choicesEl.querySelectorAll(".eval-choice").forEach(b => {
       b.disabled = true;
-      if (b.textContent === String(q.correctAnswer)) {
-        b.classList.add("reveal");
-      } else {
-        b.style.opacity = "0.3";
-      }
+      if (b.textContent === String(q.correctAnswer)) b.classList.add("reveal");
+      else b.style.opacity = "0.3";
     });
-    setTimeout(() => {
-      _qIndex++;
-      showMathQuestion();
-    }, 900);
+    setTimeout(() => { _qIndex++; showMathQuestion(); }, 900);
   });
 }
 
@@ -814,11 +775,8 @@ function showResults() {
     d.classList.add("done");
   });
 
-  const strengthScore = _habitScore + _physScore;
-  const intelScore    = _intelScore;
-
-  const strStat    = scoreToStat(strengthScore);
-  const intStat    = scoreToStat(intelScore);
+  const strStat    = scoreToStat(_habitScore + _physScore);
+  const intStat    = scoreToStat(_intelScore);
   const level      = Math.max(1, Math.floor((strStat + intStat) / 2));
   const classLabel = getClass(level);
 
@@ -843,38 +801,47 @@ function showResults() {
         </div>
       </div>
       <div class="eval-rank-badge">CLASS ${classLabel} — RANK ASSIGNED</div>
-      ${_sleepStartMin !== null
-        ? `<div style="font-size:9px;letter-spacing:0.5px;color:rgba(65,182,255,0.6);margin-top:4px;">
-             😴 Sleep quest will be created automatically
-           </div>`
-        : ""}
+      <div style="font-size:9px;letter-spacing:0.5px;color:rgba(65,182,255,0.6);margin-top:4px;">
+        😴 Sleep quest (Stamina + Health) will be created automatically
+      </div>
       <button class="eval-next-btn" id="save-btn">ENTER THE NEXUS</button>
     </div>
   `;
 
   document.getElementById("save-btn").addEventListener("click", async () => {
-    document.getElementById("save-btn").disabled = true;
+    document.getElementById("save-btn").disabled    = true;
     document.getElementById("save-btn").textContent = "Saving...";
     await saveResults(level, strStat, intStat);
   });
 }
 
 // ===============================
-// BUILD SLEEP QUEST OBJECT
-// 8-hour duration; endMin wraps past midnight if needed
+// BUILD SLEEP QUEST
+// Mirrors your existing Firebase quest push pattern exactly:
+//
+//   existing.push({
+//     id, title, category, days, startMin, endMin, slots, status, createdAt
+//   })
+//
+// title:    "Sleep"
+// category: ["Stamina", "Health"]  ← array (not a single select value)
+// days:     [0,1,2,3,4,5,6]        ← every day of the week
+// startMin: player's chosen bedtime
+// endMin:   (startMin + 480) % 1440 — wraps past midnight correctly
+// slots:    ALWAYS 16 — we do NOT use (endMin - startMin) / 30 because
+//           when sleep crosses midnight endMin < startMin, giving a
+//           negative result. The 8-hour duration is fixed at 16 slots.
 // ===============================
 function buildSleepQuest(startMin) {
-  const SLEEP_DURATION = 8 * 60;  // 480 minutes
-  const endMin = (startMin + SLEEP_DURATION) % (24 * 60);
-
+  const endMin = (startMin + SLEEP_DURATION) % DAY_MINUTES;
   return {
     id:        `aq_${Date.now()}`,
     title:     "Sleep",
-    category:  "Health",
-    days:      [0, 1, 2, 3, 4, 5, 6],   // every day of the week
+    category:  ["Stamina", "Health"],
+    days:      [0, 1, 2, 3, 4, 5, 6],
     startMin,
     endMin,
-    slots:     SLEEP_DURATION / 30,      // 16 slots
+    slots:     SLEEP_DURATION / 30,   // always 16
     status:    "pending",
     createdAt: Date.now()
   };
@@ -882,52 +849,50 @@ function buildSleepQuest(startMin) {
 
 // ===============================
 // SAVE TO FIRESTORE
+// Follows your existing pattern:
+//   existing.push(quest)
+//   updateDoc(gameRef, { "quests.active": existing, updatedAt: ... })
+//
+// Sleep quest is ALWAYS included — _sleepStartMin defaults to 10 PM.
 // ===============================
 async function saveResults(level, strStat, intStat) {
   try {
     const gameRef = doc(firestore, "gameData", _userId);
 
-    // Fetch current active quests so we can push the sleep quest
-    const snap = await getDoc(gameRef);
+    const snap     = await getDoc(gameRef);
     const existing = snap.exists()
       ? (snap.data()?.quests?.active ?? [])
       : [];
 
-    // Build the update payload
-    const updatePayload = {
-      "player.level":               level,
-      "player.xp":                  0,
-      "player.stats.strength":      strStat,
-      "player.stats.intelligence":  intStat,
-      "player.evaluationDone":      true,
-      updatedAt:                    Date.now()
-    };
+    // Push sleep quest — always present, 10 PM if player was cut off
+    existing.push(buildSleepQuest(_sleepStartMin));
 
-    // Append sleep quest if the player answered the bedtime question
-    if (_sleepStartMin !== null) {
-      const sleepQuest = buildSleepQuest(_sleepStartMin);
-      existing.push(sleepQuest);
-      updatePayload["quests.active"] = existing;
-    }
-
-    await updateDoc(gameRef, updatePayload);
+    await updateDoc(gameRef, {
+      "player.level":              level,
+      "player.xp":                 0,
+      "player.stats.strength":     strStat,
+      "player.stats.intelligence": intStat,
+      "player.evaluationDone":     true,
+      "quests.active":             existing,
+      updatedAt:                   Date.now()
+    });
 
     _evaluationComplete = true;
     setProgress("Results saved! Entering the Nexus...");
-    setTimeout(() => {
-      goTo("Home.html");
-    }, 1000);
+    setTimeout(() => goTo("Home.html"), 1000);
 
   } catch (err) {
     console.error("[evaluation] Save failed:", err);
     setProgress("Failed to save — check your connection.");
-    document.getElementById("save-btn").disabled   = false;
-    document.getElementById("save-btn").textContent = "TRY AGAIN";
+    const btn       = document.getElementById("save-btn");
+    btn.disabled    = false;
+    btn.textContent = "TRY AGAIN";
   }
 }
 
 // ===============================
 // HANDLE INCOMPLETE — page unload
+// Marks evaluationDone so the player cannot re-enter on next login.
 // ===============================
 window.addEventListener("beforeunload", () => {
   if (_userId && !_evaluationComplete) {
@@ -952,6 +917,7 @@ onAuthStateChanged(auth, async (user) => {
 
   try {
     const snap = await getDoc(doc(firestore, "gameData", user.uid));
+
     if (!snap.exists()) {
       goTo("Login.html");
       return;
