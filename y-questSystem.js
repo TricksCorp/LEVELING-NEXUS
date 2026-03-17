@@ -1256,12 +1256,25 @@ async function _handleComplete(quest, player, userId, row) {
     updatedAt:       Date.now()
   };
 
-  // +1 to the quest's primary stat
-  if (quest.category === "Strength") {
+  // ── +1 to the quest's stat(s) ──
+  // category can be a single string (e.g. "Strength") OR an array
+  // (e.g. ["Stamina", "Health"] for the Sleep quest).
+  // Both cases are handled by normalising to a lowercase array first.
+  const cats = Array.isArray(quest.category)
+    ? quest.category.map(c => c.toLowerCase())
+    : [String(quest.category).toLowerCase()];
+
+  if (cats.includes("strength")) {
     updates["player.stats.strength"] = (freshPlayer.stats?.strength ?? 1) + 1;
   }
-  if (quest.category === "Intelligence") {
+  if (cats.includes("intelligence")) {
     updates["player.stats.intelligence"] = (freshPlayer.stats?.intelligence ?? 1) + 1;
+  }
+  if (cats.includes("stamina")) {
+    updates["player.stats.stamina"] = (freshPlayer.stats?.stamina ?? 1) + 1;
+  }
+  if (cats.includes("health")) {
+    updates["player.stats.health"] = (freshPlayer.stats?.health ?? 1) + 1;
   }
 
   await updateDoc(gameRef, updates);
