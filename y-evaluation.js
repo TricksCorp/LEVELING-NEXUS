@@ -30,10 +30,11 @@
  * Sleep Quest (MANDATORY):
  *   After the 5 habit questions, a sleep time question is shown.
  *   The answer creates an 8-hour active quest named "Sleep" in quests.active.
- *   title:    "Sleep"
- *   category: ["Stamina", "Health"]
- *   slots:    always 16 (fixed 8-hour / 30-min slots — NOT endMin-startMin
- *             because sleep crosses midnight making that subtraction negative)
+ *   title:     "Sleep"
+ *   category:  ["Stamina", "Health"]
+ *   permanent: true  ← prevents deletion from y-createquest.js
+ *   slots:     always 16 (fixed 8-hour / 30-min slots — NOT endMin-startMin
+ *              because sleep crosses midnight making that subtraction negative)
  *   If the player is cut off mid-evaluation, defaults to 10:00 PM (22 * 60).
  *   There is no skip option — sleep quest is always created.
  */
@@ -448,7 +449,7 @@ function showWarningScreen() {
             🏆 &nbsp;Starting stats range from <strong style="color:#41ff88;">1 to 15</strong> depending on performance
           </div>
           <div class="warn-item">
-            😴 &nbsp;You <strong style="color:#41b6ff;">must choose your bedtime</strong> — a Sleep quest (Stamina + Health) will be created automatically
+            😴 &nbsp;You <strong style="color:#41b6ff;">must choose your bedtime</strong> — a permanent Sleep quest (Stamina + Health) will be created automatically
           </div>
           <div class="warn-item">
             📵 &nbsp;Do not refresh, navigate away, or close this tab during evaluation
@@ -514,7 +515,7 @@ function showPhaseIntro() {
     {
       icon:    "🏃",
       title:   "PHASE 1 — HABITS",
-      desc:    "Answer 5 questions about your daily lifestyle and habits. Your responses will determine your starting Strength stat. You will also choose your bedtime to set up your mandatory Sleep quest.",
+      desc:    "Answer 5 questions about your daily lifestyle and habits. Your responses will determine your starting Strength stat. You will also choose your bedtime to set up your permanent Sleep quest.",
       warn:    "Each question has a 10-second timer. Unanswered questions score 0.",
       btnText: "BEGIN HABITS PHASE"
     },
@@ -630,7 +631,7 @@ function showSleepTimeQuestion() {
       margin-bottom:16px;
       text-align:center;
     ">
-      😴 &nbsp;An 8-hour <strong style="color:#41b6ff;">Sleep</strong> quest
+      😴 &nbsp;A permanent 8-hour <strong style="color:#41b6ff;">Sleep</strong> quest
       (Stamina + Health) will be created based on your answer.
       This does not affect your score.
     </div>
@@ -802,7 +803,7 @@ function showResults() {
       </div>
       <div class="eval-rank-badge">CLASS ${classLabel} — RANK ASSIGNED</div>
       <div style="font-size:9px;letter-spacing:0.5px;color:rgba(65,182,255,0.6);margin-top:4px;">
-        😴 Sleep quest (Stamina + Health) will be created automatically
+        😴 Permanent Sleep quest (Stamina + Health) will be created automatically
       </div>
       <button class="eval-next-btn" id="save-btn">ENTER THE NEXUS</button>
     </div>
@@ -817,20 +818,16 @@ function showResults() {
 
 // ===============================
 // BUILD SLEEP QUEST
-// Mirrors your existing Firebase quest push pattern exactly:
+// Mirrors your existing Firebase quest push pattern exactly.
 //
-//   existing.push({
-//     id, title, category, days, startMin, endMin, slots, status, createdAt
-//   })
-//
-// title:    "Sleep"
-// category: ["Stamina", "Health"]  ← array (not a single select value)
-// days:     [0,1,2,3,4,5,6]        ← every day of the week
-// startMin: player's chosen bedtime
-// endMin:   (startMin + 480) % 1440 — wraps past midnight correctly
-// slots:    ALWAYS 16 — we do NOT use (endMin - startMin) / 30 because
-//           when sleep crosses midnight endMin < startMin, giving a
-//           negative result. The 8-hour duration is fixed at 16 slots.
+// title:     "Sleep"
+// category:  ["Stamina", "Health"]  ← array
+// days:      [0,1,2,3,4,5,6]        ← every day
+// permanent: true                   ← blocks deletion in y-createquest.js
+// startMin:  player's chosen bedtime
+// endMin:    (startMin + 480) % 1440 — wraps past midnight correctly
+// slots:     always 16 — NOT (endMin-startMin)/30 because sleep crosses
+//            midnight making that subtraction negative
 // ===============================
 function buildSleepQuest(startMin) {
   const endMin = (startMin + SLEEP_DURATION) % DAY_MINUTES;
@@ -843,6 +840,7 @@ function buildSleepQuest(startMin) {
     endMin,
     slots:     SLEEP_DURATION / 30,   // always 16
     status:    "pending",
+    permanent: true,                  // prevents deletion from quest manager
     createdAt: Date.now()
   };
 }
