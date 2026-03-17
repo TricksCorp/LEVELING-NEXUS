@@ -28,13 +28,69 @@ const db        = getDatabase(app);
 const firestore = getFirestore(app);
 
 // ===============================
-// USERNAME LIMIT
-// Hard-cap the input field to 13 chars
+// DOM SETUP
 // ===============================
 document.addEventListener("DOMContentLoaded", () => {
+
+  // ── Username 13-char hard cap ──
   const usernameInput = document.getElementById("username");
-  if (usernameInput) {
-    usernameInput.maxLength = 13;
+  if (usernameInput) usernameInput.maxLength = 13;
+
+  // ── Password show/hide toggle ──
+  const passwordInput = document.getElementById("password");
+  if (passwordInput) {
+    // Wrap the input in a relative container
+    const wrapper = document.createElement("div");
+    wrapper.style.cssText = "position:relative;display:flex;align-items:center;width:100%;";
+    passwordInput.parentNode.insertBefore(wrapper, passwordInput);
+    wrapper.appendChild(passwordInput);
+
+    // Give the input right padding so text doesn't overlap the button
+    passwordInput.style.paddingRight  = "42px";
+    passwordInput.style.width         = "100%";
+    passwordInput.style.boxSizing     = "border-box";
+
+    // Build the toggle button
+    const toggleBtn = document.createElement("button");
+    toggleBtn.type      = "button";
+    toggleBtn.innerHTML = "👁";
+    toggleBtn.title     = "Show / hide password";
+    toggleBtn.style.cssText = `
+      position   : absolute;
+      right      : 10px;
+      background : none;
+      border     : none;
+      cursor     : pointer;
+      font-size  : 15px;
+      color      : rgba(65,182,255,0.5);
+      padding    : 0;
+      line-height: 1;
+      transition : color 0.2s ease;
+      user-select: none;
+    `;
+
+    // Hover glow
+    toggleBtn.addEventListener("mouseenter", () => {
+      toggleBtn.style.color = "rgba(65,182,255,0.9)";
+    });
+    toggleBtn.addEventListener("mouseleave", () => {
+      // Stay bright if password is currently visible
+      toggleBtn.style.color = passwordInput.type === "text"
+        ? "rgba(65,182,255,0.9)"
+        : "rgba(65,182,255,0.5)";
+    });
+
+    // Click: toggle between hidden and visible
+    toggleBtn.addEventListener("click", () => {
+      const isHidden = passwordInput.type === "password";
+      passwordInput.type      = isHidden ? "text"     : "password";
+      toggleBtn.innerHTML     = isHidden ? "🙈"       : "👁";
+      toggleBtn.style.color   = isHidden
+        ? "rgba(65,182,255,0.9)"   // visible  → bright
+        : "rgba(65,182,255,0.5)";  // hidden   → dim
+    });
+
+    wrapper.appendChild(toggleBtn);
   }
 });
 
@@ -98,16 +154,14 @@ function setStatus(msg, isError = false) {
     document.getElementById("submit")?.parentNode?.appendChild(el);
   }
   el.textContent      = msg;
-  el.style.background = isError ? "rgba(255,80,80,0.1)"       : "rgba(65,182,255,0.08)";
+  el.style.background = isError ? "rgba(255,80,80,0.1)"           : "rgba(65,182,255,0.08)";
   el.style.border     = isError ? "1px solid rgba(255,80,80,0.35)" : "1px solid rgba(65,182,255,0.25)";
-  el.style.color      = isError ? "#ff6b6b"                   : "rgba(65,182,255,0.8)";
+  el.style.color      = isError ? "#ff6b6b"                       : "rgba(65,182,255,0.8)";
 }
 function clearStatus() { document.getElementById("register-status")?.remove(); }
 
 // ===============================
 // VERIFICATION MODAL
-// Shows while we poll for email
-// verification in the background.
 // ===============================
 function showVerifyModal(email, onVerified, onCancel) {
   if (!document.getElementById("vm-style")) {
@@ -204,14 +258,13 @@ function showVerifyModal(email, onVerified, onCancel) {
   const resendBtn = overlay.querySelector("#vm-resend");
   const cancelBtn = overlay.querySelector("#vm-cancel");
 
-  // ── Poll every 3 seconds for emailVerified ──
   let pollHandle = setInterval(async () => {
     try {
       await reload(auth.currentUser);
       if (auth.currentUser?.emailVerified) {
         clearInterval(pollHandle);
-        statusEl.textContent      = "✓ Email verified!";
-        statusEl.style.color      = "#41ff88";
+        statusEl.textContent = "✓ Email verified!";
+        statusEl.style.color = "#41ff88";
         overlay.querySelector(".vm-spinner").style.borderTopColor = "#41ff88";
         resendBtn.disabled = true;
         cancelBtn.disabled = true;
@@ -223,7 +276,6 @@ function showVerifyModal(email, onVerified, onCancel) {
     } catch { /* silent — network blip */ }
   }, 3000);
 
-  // ── Resend with 30s cooldown ──
   let resendCooldown = false;
   resendBtn.addEventListener("click", async () => {
     if (resendCooldown) return;
@@ -244,7 +296,6 @@ function showVerifyModal(email, onVerified, onCancel) {
     }, 30_000);
   });
 
-  // ── Cancel — delete the auth account cleanly ──
   cancelBtn.addEventListener("click", async () => {
     clearInterval(pollHandle);
     overlay.remove();
@@ -258,22 +309,22 @@ function showVerifyModal(email, onVerified, onCancel) {
 document.getElementById("submit").addEventListener("click", async (event) => {
   event.preventDefault();
 
-  const username  = document.getElementById("username").value.trim();
-  const email     = document.getElementById("email").value.trim();
-  const password  = document.getElementById("password").value;
+  const username = document.getElementById("username").value.trim();
+  const email    = document.getElementById("email").value.trim();
+  const password = document.getElementById("password").value;
 
   if (!username || !email || !password) {
     setStatus("Please fill in all fields.", true);
     return;
   }
 
-  // ✅ Username length validation (backup for non-HTML enforcement)
+  // ✅ Username length guard (backup for maxLength)
   if (username.length > 13) {
     setStatus("Username must be 13 characters or fewer.", true);
     return;
   }
 
-  // Password policy validation
+  // Password policy
   if (password.length < 8) {
     setStatus("Password must be at least 8 characters.", true);
     return;
@@ -294,22 +345,18 @@ document.getElementById("submit").addEventListener("click", async (event) => {
   let user = null;
 
   try {
-    // ── Step 1: Create auth account ──
     setStatus("Creating account...");
     const userCredential = await createUserWithEmailAndPassword(auth, email, password);
     user = userCredential.user;
 
-    // ── Step 2: Send verification email ──
     setStatus("Sending verification email...");
     await sendEmailVerification(user, {
       url: window.location.origin + "/LEVELING-NEXUS/Login.html"
     });
 
-    // ── Step 3: Show modal and wait for verification ──
     setStatus("Check your email to verify your account.");
 
     showVerifyModal(email,
-      // ── onVerified: save all data ──
       async () => {
         setStatus("Saving your account...");
         try {
@@ -324,7 +371,7 @@ document.getElementById("submit").addEventListener("click", async (event) => {
           );
           setStatus("✓ Account ready! Redirecting...");
           setTimeout(() => {
-            window.location.href = "/LEVELING-NEXUS/Login.html"; // ✅ Fixed: absolute path
+            window.location.href = "/LEVELING-NEXUS/Login.html";
           }, 1200);
         } catch (saveErr) {
           console.error("[register] Save failed after verify:", saveErr);
@@ -333,7 +380,6 @@ document.getElementById("submit").addEventListener("click", async (event) => {
           submitBtn.disabled = false;
         }
       },
-      // ── onCancel: delete the pending auth account ──
       async () => {
         try { await deleteUser(user); }
         catch (e) { console.warn("[register] Could not delete unverified account:", e); }
