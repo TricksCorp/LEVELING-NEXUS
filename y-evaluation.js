@@ -4,7 +4,7 @@
  * Rank Evaluation System for Leveling Nexus.
  *
  * Phases:
- *   1. Habits      — 5 lifestyle questions  → Strength score (0–25)
+ *   1. Habits      — 5 lifestyle questions + 1 sleep time question  → Strength score (0–25)
  *   2. Physical    — Height + Weight (BMI)  → Strength score (0–25)
  *   3. Intelligence — 10 math questions     → Intelligence score (0–50)
  *
@@ -26,6 +26,10 @@
  * If player exits/fails to complete → level 1, str 1, int 1
  *
  * Guard: gameData.evaluationDone = true prevents re-evaluation
+ *
+ * Sleep Quest:
+ *   After the 5 habit questions, a sleep time question is shown.
+ *   The answer creates an 8-hour active quest named "Sleep" in quests.active.
  */
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-app.js";
@@ -34,7 +38,8 @@ import {
   getFirestore,
   doc,
   getDoc,
-  updateDoc
+  updateDoc,
+  arrayUnion
 } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-firestore.js";
 
 const firebaseConfig = {
@@ -117,6 +122,23 @@ const HABIT_QUESTIONS = [
       { text: "Barely drink water",      points: 0 }
     ]
   }
+];
+
+// ===============================
+// SLEEP TIME OPTIONS
+// Shown after the 5 habit questions.
+// Selecting a time stores the bedtime as minutes-from-midnight
+// and schedules an 8-hour "Sleep" quest.
+// ===============================
+const SLEEP_TIME_OPTIONS = [
+  { label: "8:00 PM",  startMin: 20 * 60 },       // 1200
+  { label: "9:00 PM",  startMin: 21 * 60 },       // 1260
+  { label: "10:00 PM", startMin: 22 * 60 },       // 1320
+  { label: "11:00 PM", startMin: 23 * 60 },       // 1380
+  { label: "12:00 AM", startMin: 0  },            // 0  (midnight)
+  { label: "1:00 AM",  startMin: 1  * 60 },       // 60
+  { label: "2:00 AM",  startMin: 2  * 60 },       // 120
+  { label: "3:00 AM",  startMin: 3  * 60 }        // 180
 ];
 
 // ===============================
@@ -310,6 +332,9 @@ let _answered     = false;
 let _phaseIntro   = true;
 let _evaluationComplete = false;
 
+// Sleep quest state — set during the sleep time question
+let _sleepStartMin = null;   // minutes from midnight (or null if skipped)
+
 // ===============================
 // DOM HELPERS
 // ===============================
@@ -426,6 +451,9 @@ function showWarningScreen() {
             🏆 &nbsp;Starting stats range from <strong style="color:#41ff88;">1 to 15</strong> depending on performance
           </div>
           <div class="warn-item">
+            😴 &nbsp;A <strong style="color:#41b6ff;">Sleep</strong> active quest will be automatically created based on your bedtime
+          </div>
+          <div class="warn-item">
             📵 &nbsp;Do not refresh, navigate away, or close this tab during evaluation
           </div>
         </div>
@@ -489,7 +517,7 @@ function showPhaseIntro() {
     {
       icon: "🏃",
       title: "PHASE 1 — HABITS",
-      desc: "Answer 5 questions about your daily lifestyle and habits. Your responses will determine your starting Strength stat.",
+      desc: "Answer 5 questions about your daily lifestyle and habits. Your responses will determine your starting Strength stat. You will also be asked about your bedtime to set up your Sleep quest.",
       warn: "Each question has a 10-second timer. Unanswered questions score 0.",
       btnText: "BEGIN HABITS PHASE"
     },
@@ -544,9 +572,9 @@ function showPhaseIntro() {
 // PHASE 1 — HABITS
 // ===============================
 function showHabitQuestion() {
+  // After the 5 habit questions, show the sleep time question before advancing
   if (_qIndex >= HABIT_QUESTIONS.length) {
-    _phase = 1;
-    showPhaseIntro();
+    showSleepTimeQuestion();
     return;
   }
 
@@ -590,6 +618,71 @@ function showHabitQuestion() {
       _qIndex++;
       showHabitQuestion();
     }, 800);
+  });
+}
+
+// ===============================
+// SLEEP TIME QUESTION
+// Shown after the 5 habit questions.
+// No timer penalty — this is purely for quest setup.
+// ===============================
+function showSleepTimeQuestion() {
+  stopTimer();
+  timerWrap().style.display = "none";
+  updatePhaseIndicator();
+  setProgress("Habits — Bonus: Sleep Schedule");
+
+  content().innerHTML = `
+    <div class="eval-question-num">HABITS · SLEEP SCHEDULE</div>
+    <div class="eval-question-text" style="margin-bottom:6px;">
+      What time do you usually go to sleep?
+    </div>
+    <div style="
+      font-size:9px;letter-spacing:0.4px;
+      color:rgba(65,182,255,0.55);
+      margin-bottom:16px;
+      text-align:center;
+    ">
+      😴 &nbsp;An 8-hour <strong style="color:#41b6ff;">Sleep</strong> active quest will be created based on your answer.
+      This does not affect your score.
+    </div>
+    <div class="eval-choices" id="sleep-choices" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;"></div>
+    <button
+      id="sleep-skip-btn"
+      style="
+        margin-top:14px;
+        background:transparent;
+        border:1px solid rgba(255,255,255,0.1);
+        color:rgba(217,238,252,0.35);
+        font-family:'Orbitron',system-ui;
+        font-size:8px;letter-spacing:1px;
+        padding:8px 20px;border-radius:8px;cursor:pointer;
+      "
+    >SKIP — SET UP LATER</button>
+  `;
+
+  const choicesEl = document.getElementById("sleep-choices");
+
+  SLEEP_TIME_OPTIONS.forEach((opt) => {
+    const btn = document.createElement("button");
+    btn.className   = "eval-choice";
+    btn.textContent = opt.label;
+    btn.addEventListener("click", () => {
+      choicesEl.querySelectorAll(".eval-choice").forEach(b => b.disabled = true);
+      btn.classList.add("selected");
+      _sleepStartMin = opt.startMin;
+      setTimeout(() => {
+        _phase = 1;
+        showPhaseIntro();
+      }, 600);
+    });
+    choicesEl.appendChild(btn);
+  });
+
+  document.getElementById("sleep-skip-btn").addEventListener("click", () => {
+    _sleepStartMin = null;  // no quest created
+    _phase = 1;
+    showPhaseIntro();
   });
 }
 
@@ -750,6 +843,11 @@ function showResults() {
         </div>
       </div>
       <div class="eval-rank-badge">CLASS ${classLabel} — RANK ASSIGNED</div>
+      ${_sleepStartMin !== null
+        ? `<div style="font-size:9px;letter-spacing:0.5px;color:rgba(65,182,255,0.6);margin-top:4px;">
+             😴 Sleep quest will be created automatically
+           </div>`
+        : ""}
       <button class="eval-next-btn" id="save-btn">ENTER THE NEXUS</button>
     </div>
   `;
@@ -762,25 +860,62 @@ function showResults() {
 }
 
 // ===============================
+// BUILD SLEEP QUEST OBJECT
+// 8-hour duration; endMin wraps past midnight if needed
+// ===============================
+function buildSleepQuest(startMin) {
+  const SLEEP_DURATION = 8 * 60;  // 480 minutes
+  const endMin = (startMin + SLEEP_DURATION) % (24 * 60);
+
+  return {
+    id:        `aq_${Date.now()}`,
+    title:     "Sleep",
+    category:  "Health",
+    days:      [0, 1, 2, 3, 4, 5, 6],   // every day of the week
+    startMin,
+    endMin,
+    slots:     SLEEP_DURATION / 30,      // 16 slots
+    status:    "pending",
+    createdAt: Date.now()
+  };
+}
+
+// ===============================
 // SAVE TO FIRESTORE
 // ===============================
 async function saveResults(level, strStat, intStat) {
   try {
     const gameRef = doc(firestore, "gameData", _userId);
 
-    await updateDoc(gameRef, {
+    // Fetch current active quests so we can push the sleep quest
+    const snap = await getDoc(gameRef);
+    const existing = snap.exists()
+      ? (snap.data()?.quests?.active ?? [])
+      : [];
+
+    // Build the update payload
+    const updatePayload = {
       "player.level":               level,
       "player.xp":                  0,
       "player.stats.strength":      strStat,
       "player.stats.intelligence":  intStat,
       "player.evaluationDone":      true,
       updatedAt:                    Date.now()
-    });
+    };
+
+    // Append sleep quest if the player answered the bedtime question
+    if (_sleepStartMin !== null) {
+      const sleepQuest = buildSleepQuest(_sleepStartMin);
+      existing.push(sleepQuest);
+      updatePayload["quests.active"] = existing;
+    }
+
+    await updateDoc(gameRef, updatePayload);
 
     _evaluationComplete = true;
     setProgress("Results saved! Entering the Nexus...");
     setTimeout(() => {
-      goTo("Home.html"); // ✅ Fixed: absolute path
+      goTo("Home.html");
     }, 1000);
 
   } catch (err) {
@@ -809,7 +944,7 @@ window.addEventListener("beforeunload", () => {
 // ===============================
 onAuthStateChanged(auth, async (user) => {
   if (!user) {
-    goTo("Login.html"); // ✅ Fixed: absolute path
+    goTo("Login.html");
     return;
   }
 
@@ -818,14 +953,14 @@ onAuthStateChanged(auth, async (user) => {
   try {
     const snap = await getDoc(doc(firestore, "gameData", user.uid));
     if (!snap.exists()) {
-      goTo("Login.html"); // ✅ Fixed: absolute path
+      goTo("Login.html");
       return;
     }
 
     const data = snap.data();
 
     if (data.player?.evaluationDone === true) {
-      goTo("Home.html"); // ✅ Fixed: absolute path
+      goTo("Home.html");
       return;
     }
 
