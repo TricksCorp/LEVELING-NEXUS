@@ -835,7 +835,7 @@ function buildSleepQuest(startMin) {
     id:        `aq_${Date.now()}`,
     title:     "Sleep",
     category:  ["Stamina", "Health"],
-    days:      [0, 1, 2, 3, 4, 5, 6],
+    days:      [Sun, Mon, Tue, Wed, Thu, Fri, Sat],
     startMin,
     endMin,
     slots:     SLEEP_DURATION / 30,   // always 16
