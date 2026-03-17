@@ -53,6 +53,16 @@ const firestore = getFirestore(app);
 const auth      = getAuth(app);
 
 // ===============================
+// ROUTING HELPER
+// Absolute paths for GitHub Pages
+// ===============================
+const BASE = "/LEVELING-NEXUS";
+
+function goTo(page) {
+  window.location.href = `${BASE}/${page}`;
+}
+
+// ===============================
 // CONSTANTS
 // ===============================
 const TIMER_SECONDS = 10;
@@ -147,14 +157,13 @@ function generateMathQuestions() {
 
   // ── Tier 3 (Q5–6): Algebra ──
   {
-    const a = rand(2, 8), b = rand(5, 20), c = rand(1, 5);
-    // ax + b = c*a + b + c → ans = c
+    const a = rand(2, 8), b = rand(5, 20);
     const ans = rand(3, 12);
     const rhs = a * ans + b;
     questions.push(makeMath(`Solve: ${a}x + ${b} = ${rhs}  →  x = ?`, ans, 5, 0));
   }
   {
-    const a = rand(2, 6), b = rand(1, 5), c = rand(3, 10);
+    const a = rand(2, 6), b = rand(1, 5);
     const ans = rand(2, 8);
     const rhs = a * ans - b;
     questions.push(makeMath(`Solve: ${a}x − ${b} = ${rhs}  →  x = ?`, ans, 5, 0));
@@ -167,12 +176,10 @@ function generateMathQuestions() {
     questions.push(makeMath(`${base}^${exp} = ?`, ans, ans * 0.6, 0));
   }
   {
-    // x² + bx + c = 0 with nice roots
     const r1 = rand(1, 7), r2 = rand(1, 7);
     const b = -(r1 + r2), c = r1 * r2;
     const bStr = b < 0 ? `− ${Math.abs(b)}` : `+ ${b}`;
     const cStr = c < 0 ? `− ${Math.abs(c)}` : `+ ${c}`;
-    // Ask for the positive root
     const ans = Math.max(r1, r2);
     questions.push(makeMath(
       `x² ${bStr}x ${cStr} = 0  →  larger root = ?`,
@@ -187,7 +194,6 @@ function generateMathQuestions() {
     questions.push(makeMath(`${a}×${b} + ${c}×${b} = ?  (factor first)`, ans, ans * 0.5, 0));
   }
   {
-    // Compound percentage
     const principal = [1000, 2000, 5000][rand(0,2)];
     const rate = [5, 8, 10][rand(0,2)];
     const years = rand(2, 4);
@@ -269,7 +275,6 @@ function calcPhysicalScore(heightCm, weightKg) {
   const heightM = heightCm / 100;
   const bmi     = weightKg / (heightM * heightM);
 
-  // Ideal BMI range 18.5–24.9 = max score
   if (bmi >= 18.5 && bmi <= 24.9) return 25;
   if (bmi >= 17.0 && bmi <  18.5) return 20;
   if (bmi >= 25.0 && bmi <= 27.4) return 20;
@@ -293,16 +298,17 @@ function getClass(level) {
 // EVALUATION STATE
 // ===============================
 let _userId       = null;
-let _phase        = 0; // 0=habits, 1=physical, 2=intel
+let _phase        = 0;
 let _habitScore   = 0;
 let _physScore    = 0;
 let _intelScore   = 0;
-let _qIndex       = 0; // current question index within phase
+let _qIndex       = 0;
 let _mathQs       = [];
 let _timerHandle  = null;
 let _timerLeft    = TIMER_SECONDS;
 let _answered     = false;
-let _phaseIntro   = true; // showing phase intro?
+let _phaseIntro   = true;
+let _evaluationComplete = false;
 
 // ===============================
 // DOM HELPERS
@@ -340,7 +346,6 @@ function startTimer(onExpire) {
   timerBar().classList.remove("warning", "critical");
   timerLabel().textContent = `${TIMER_SECONDS}s`;
 
-  // Force reflow so transition resets
   timerBar().offsetHeight;
   timerBar().style.transition = `width ${TIMER_SECONDS}s linear`;
   timerBar().style.width = "0%";
@@ -369,14 +374,11 @@ function stopTimer() {
 
 // ===============================
 // WARNING SCREEN
-// Shown before evaluation begins.
-// Player must actively confirm.
 // ===============================
 function showWarningScreen() {
   stopTimer();
   timerWrap().style.display = "none";
 
-  // Reset all phase dots to default
   document.querySelectorAll(".phase-dot").forEach(d => {
     d.classList.remove("active", "done");
   });
@@ -467,8 +469,8 @@ function showWarningScreen() {
   `;
 
   document.getElementById("warn-start-btn").addEventListener("click", () => {
-    _phase     = 0;
-    _qIndex    = 0;
+    _phase      = 0;
+    _qIndex     = 0;
     _phaseIntro = true;
     showPhaseIntro();
   });
@@ -543,7 +545,6 @@ function showPhaseIntro() {
 // ===============================
 function showHabitQuestion() {
   if (_qIndex >= HABIT_QUESTIONS.length) {
-    // Phase done — move to physical
     _phase = 1;
     showPhaseIntro();
     return;
@@ -560,7 +561,7 @@ function showHabitQuestion() {
   `;
 
   const choicesEl = document.getElementById("choices");
-  q.choices.forEach((choice, i) => {
+  q.choices.forEach((choice) => {
     const btn = document.createElement("button");
     btn.className   = "eval-choice";
     btn.textContent = choice.text;
@@ -569,7 +570,6 @@ function showHabitQuestion() {
       _answered = true;
       stopTimer();
       _habitScore += choice.points;
-      // Highlight selected
       choicesEl.querySelectorAll(".eval-choice").forEach(b => b.disabled = true);
       btn.classList.add("selected");
       setTimeout(() => {
@@ -581,7 +581,6 @@ function showHabitQuestion() {
   });
 
   startTimer(() => {
-    // Time expired — score 0, move on
     _answered = true;
     choicesEl.querySelectorAll(".eval-choice").forEach(b => {
       b.disabled = true;
@@ -641,7 +640,6 @@ function showPhysicalInput() {
 // ===============================
 function showMathQuestion() {
   if (_qIndex >= _mathQs.length) {
-    // All math done — show results
     showResults();
     return;
   }
@@ -650,7 +648,6 @@ function showMathQuestion() {
   updatePhaseIndicator();
   setProgress(`Intelligence — Question ${_qIndex + 1} of ${_mathQs.length}`);
 
-  // Difficulty label
   const tier = _qIndex < 2 ? "BASIC"
              : _qIndex < 4 ? "INTERMEDIATE"
              : _qIndex < 6 ? "ADVANCED"
@@ -681,7 +678,6 @@ function showMathQuestion() {
         _intelScore += 5;
       } else {
         btn.classList.add("wrong");
-        // Reveal correct answer
         choicesEl.querySelectorAll(".eval-choice").forEach(b => {
           if (b.textContent === String(q.correctAnswer)) b.classList.add("reveal");
         });
@@ -696,7 +692,6 @@ function showMathQuestion() {
   });
 
   startTimer(() => {
-    // Expired — 0 points, reveal correct answer
     _answered = true;
     choicesEl.querySelectorAll(".eval-choice").forEach(b => {
       b.disabled = true;
@@ -721,18 +716,17 @@ function showResults() {
   timerWrap().style.display = "none";
   updatePhaseIndicator();
 
-  // Mark all phases done
   document.querySelectorAll(".phase-dot").forEach(d => {
     d.classList.remove("active");
     d.classList.add("done");
   });
 
-  const strengthScore = _habitScore + _physScore; // max 50
-  const intelScore    = _intelScore;               // max 50
+  const strengthScore = _habitScore + _physScore;
+  const intelScore    = _intelScore;
 
-  const strStat   = scoreToStat(strengthScore);
-  const intStat   = scoreToStat(intelScore);
-  const level     = Math.max(1, Math.floor((strStat + intStat) / 2));
+  const strStat    = scoreToStat(strengthScore);
+  const intStat    = scoreToStat(intelScore);
+  const level      = Math.max(1, Math.floor((strStat + intStat) / 2));
   const classLabel = getClass(level);
 
   setProgress("Evaluation complete — saving results...");
@@ -783,9 +777,10 @@ async function saveResults(level, strStat, intStat) {
       updatedAt:                    Date.now()
     });
 
+    _evaluationComplete = true;
     setProgress("Results saved! Entering the Nexus...");
     setTimeout(() => {
-      window.location.href = "Home.html";
+      goTo("Home.html"); // ✅ Fixed: absolute path
     }, 1000);
 
   } catch (err) {
@@ -798,12 +793,9 @@ async function saveResults(level, strStat, intStat) {
 
 // ===============================
 // HANDLE INCOMPLETE — page unload
-// If player closes/navigates away
-// before finishing, save minimum stats.
 // ===============================
 window.addEventListener("beforeunload", () => {
   if (_userId && !_evaluationComplete) {
-    // Fire-and-forget — best effort
     const gameRef = doc(firestore, "gameData", _userId);
     updateDoc(gameRef, {
       "player.evaluationDone": true,
@@ -812,14 +804,12 @@ window.addEventListener("beforeunload", () => {
   }
 });
 
-let _evaluationComplete = false;
-
 // ===============================
 // AUTH + GUARD
 // ===============================
 onAuthStateChanged(auth, async (user) => {
   if (!user) {
-    window.location.href = "Login.html";
+    goTo("Login.html"); // ✅ Fixed: absolute path
     return;
   }
 
@@ -828,19 +818,17 @@ onAuthStateChanged(auth, async (user) => {
   try {
     const snap = await getDoc(doc(firestore, "gameData", user.uid));
     if (!snap.exists()) {
-      window.location.href = "Login.html";
+      goTo("Login.html"); // ✅ Fixed: absolute path
       return;
     }
 
     const data = snap.data();
 
-    // Guard — already evaluated, skip to home
     if (data.player?.evaluationDone === true) {
-      window.location.href = "Home.html";
+      goTo("Home.html"); // ✅ Fixed: absolute path
       return;
     }
 
-    // Start evaluation with warning screen first
     showWarningScreen();
 
   } catch (err) {
