@@ -177,6 +177,15 @@ modalStyle.textContent = `
 .quest-delete-btn:hover { background: rgba(255,80,80,0.25); border-color: rgba(255,80,80,0.6); color: #ff4040; transform: translateY(-1px); box-shadow: 0 0 8px rgba(255,80,80,0.4); }
 .quest-delete-btn:active { transform: translateY(0); }
 .quest-delete-btn:disabled { opacity: 0.3; cursor: not-allowed; transform: none; }
+/* Permanent lock icon — replaces delete button for undeletable quests */
+.quest-lock-icon {
+  width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  font-size: 11px; border-radius: 6px;
+  color: rgba(65,182,255,0.3);
+  background: rgba(65,182,255,0.05);
+  border: 1px solid rgba(65,182,255,0.12);
+  cursor: default;
+}
 .quest-delete-confirm { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
 .quest-delete-confirm-yes {
   font-family: "Orbitron", system-ui; font-size: 9px; font-weight: 700; padding: 3px 8px; border-radius: 6px;
@@ -648,15 +657,24 @@ async function renderSavedActiveQuests(listEl) {
     if (!snap.exists()) { listEl.innerHTML=`<div class="saved-quests-empty">No data.</div>`; return; }
     const active = snap.data().quests?.active||[];
     if (!active.length) { listEl.innerHTML=`<div class="saved-quests-empty">No active quests yet.</div>`; return; }
-    listEl.innerHTML = active.map((q,i)=>`
-      <div class="saved-quest-item" data-index="${i}">
-        <div class="saved-quest-info">
-          <div class="saved-quest-text">${escapeHtml(q.title)}</div>
-          <div class="saved-quest-sub">${minsToTime(q.startMin)}–${minsToTime(q.endMin)} · ${(q.days||[]).join(", ")}</div>
-        </div>
-        <span class="saved-quest-badge ${(q.category||"").toLowerCase()}">${q.category||"—"}</span>
-        <button class="quest-delete-btn" data-index="${i}">✕</button>
-      </div>`).join("");
+
+    listEl.innerHTML = active.map((q,i) => {
+      // Permanent quests show a lock icon instead of a delete button
+      const actionBtn = q.permanent === true
+        ? `<div class="quest-lock-icon" title="This quest cannot be deleted">🔒</div>`
+        : `<button class="quest-delete-btn" data-index="${i}" data-permanent="false">✕</button>`;
+
+      return `
+        <div class="saved-quest-item" data-index="${i}">
+          <div class="saved-quest-info">
+            <div class="saved-quest-text">${escapeHtml(q.title)}</div>
+            <div class="saved-quest-sub">${minsToTime(q.startMin)}–${minsToTime(q.endMin)} · ${(q.days||[]).join(", ")}</div>
+          </div>
+          <span class="saved-quest-badge ${(q.category||"").toLowerCase()}">${Array.isArray(q.category) ? q.category.join(" + ") : (q.category||"—")}</span>
+          ${actionBtn}
+        </div>`;
+    }).join("");
+
     listEl.querySelectorAll(".quest-delete-btn").forEach(b=>{
       b.addEventListener("click",()=>showDeleteConfirm(b,+b.dataset.index,listEl,null,"active"));
     });
@@ -720,7 +738,24 @@ async function renderSavedUrgentQuests(thisListEl, nextListEl) {
 // ===============================
 // DELETE FLOW (shared)
 // ===============================
+
+/**
+ * Show delete confirmation for a quest row.
+ *
+ * Guard: if the delete button carries data-permanent="true", the quest
+ * is permanent (e.g. the Sleep quest) and cannot be deleted.
+ * The button briefly dims to give visual feedback, then returns early.
+ * This check is based on the Firestore `permanent` flag — not the quest
+ * title — so a player naming their own quest "Sleep" is unaffected.
+ */
 function showDeleteConfirm(btn, index, listEl, countBadge, scope) {
+  // Permanent quests cannot be deleted — flash button and bail
+  if (btn.dataset.permanent === "true") {
+    btn.style.opacity = "0.2";
+    setTimeout(() => { btn.style.opacity = ""; }, 600);
+    return;
+  }
+
   const item = btn.closest(".saved-quest-item");
   btn.replaceWith(createConfirmButtons(index, item, listEl, countBadge, scope));
 }
@@ -746,7 +781,7 @@ function createConfirmButtons(index, item, listEl, countBadge, scope) {
         const tl  = arr.find(el=>el.id==="uq-this-list") || arr[arr.length-2];
         const nl  = arr.find(el=>el.id==="uq-next-list") || arr[arr.length-1];
         await renderSavedUrgentQuests(tl, nl);
-        // Refresh urgent count badges — find refreshUrgentCounts via closure if available
+        // Refresh urgent count badges
         const badge     = listEl.closest(".quest-modal")?.querySelector("#uq-count-badge");
         const thisLabel = listEl.closest(".quest-modal")?.querySelector("#uq-this-label");
         const nextLabel = listEl.closest(".quest-modal")?.querySelector("#uq-next-label");
@@ -795,7 +830,12 @@ async function deleteQuestFromFirestore(index, scope) {
     let arr, key;
 
     if (scope==="daily")           { arr=d.quests?.daily||[];            key="quests.daily"; }
-    else if (scope==="active")     { arr=d.quests?.active||[];           key="quests.active"; }
+    else if (scope==="active")     {
+      arr = d.quests?.active || [];
+      // Final server-side guard — never delete a permanent quest
+      if (arr[index]?.permanent === true) return false;
+      key = "quests.active";
+    }
     else if (scope==="urgentNextWeek") { arr=d.quests?.urgentNextWeek||[]; key="quests.urgentNextWeek"; }
     else if (scope==="urgentWeek") {
       const uw = d.quests?.urgentWeek || { week:"", quests:[] };
