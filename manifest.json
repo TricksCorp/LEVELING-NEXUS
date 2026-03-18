@@ -1,0 +1,26 @@
+{
+  "name": "LEVELING NEXUS",
+  "short_name": "NEXUS",
+  "description": "Level up your real life. Track habits, complete quests, and grow your stats.",
+  "start_url": "/LEVELING-NEXUS/Login.html",
+  "scope": "/LEVELING-NEXUS/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#000000",
+  "theme_color": "#000000",
+  "categories": ["lifestyle", "productivity", "games"],
+  "icons": [
+    {
+      "src": "/LEVELING-NEXUS/Logo.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/LEVELING-NEXUS/Logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
