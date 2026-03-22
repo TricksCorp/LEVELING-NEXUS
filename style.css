@@ -474,17 +474,20 @@
 .leaderboard .leaderboard-entry .entry-class { font-size: 14px; font-weight: 700; color: var(--accent); }
 
 .leaderboard .your-current-rank {
-  background: var(--panel); border-radius: var(--radius); padding: 16px;
-  margin-top: 20px; position: static;
+  background: var(--panel); border-radius: 10px; padding: 10px 12px;
+  margin-top: 12px; position: sticky; bottom: 20px;
   box-shadow: 0 4px 20px rgba(0,0,0,0.6);
 }
-.leaderboard .your-current-rank .section-title { color: var(--neon); font-size: 18px; margin-bottom: 12px; }
+.leaderboard .your-current-rank .section-title {
+  color: var(--neon); font-size: 12px; margin-bottom: 6px; letter-spacing: 1.5px;
+}
 .leaderboard .your-current-rank .current-rank-info {
   display: flex; justify-content: space-between; align-items: center;
+  flex-wrap: wrap; gap: 8px;
 }
-.leaderboard .your-current-rank .rank  { font-size: 16px; font-weight: 700; color: var(--neon); }
-.leaderboard .your-current-rank .class { font-size: 14px; color: var(--neon); }
-.leaderboard .your-current-rank .name  { font-size: 14px; color: var(--muted); margin-left: 10px; }
+.leaderboard .your-current-rank .rank  { font-size: 13px; font-weight: 700; color: var(--neon); }
+.leaderboard .your-current-rank .class { font-size: 12px; color: var(--neon); }
+.leaderboard .your-current-rank .name  { font-size: 12px; color: var(--muted); margin-left: 0; }
 
 
 /* ============================================================
@@ -907,34 +910,10 @@
     justify-content: center;
   }
 
-  /* ── Leaderboard: all entries visible, no cap ── */
-
   /* ── Leaderboard: smaller entry text ── */
   .leaderboard .leaderboard-entry .entry-rank { font-size: 14px; }
   .leaderboard .leaderboard-entry .entry-name { font-size: 13px; }
   .leaderboard .leaderboard-entry .entry-class { font-size: 13px; }
-
-  /* ── Leaderboard: shrink + un-sticky current-rank on mobile ── */
-  .leaderboard .your-current-rank {
-    position: static;
-    margin-top: 12px;
-    padding: 10px 12px;
-    border-radius: 10px;
-  }
-  .leaderboard .your-current-rank .section-title {
-    font-size: 12px;
-    margin-bottom: 6px;
-    letter-spacing: 1.5px;
-  }
-  .leaderboard .your-current-rank .current-rank-info {
-    flex-direction: row;
-    align-items: center;
-    gap: 8px;
-    flex-wrap: wrap;
-  }
-  .leaderboard .your-current-rank .rank  { font-size: 13px; }
-  .leaderboard .your-current-rank .class { font-size: 12px; }
-  .leaderboard .your-current-rank .name  { font-size: 12px; margin-left: 0; }
 
   /* ── Profile: single-column grid ── */
   .profile .profile-content {
