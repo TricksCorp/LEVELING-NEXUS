@@ -1120,3 +1120,240 @@
   /* ── Leaderboard: no max-height cap ── */
 
 }
+
+
+/* ============================================================
+   TINY SCREENS  (max-width: 360px)
+   Covers very small phones — older iPhone SE, budget Androids.
+   Moderate shrink: tighter padding, smaller fonts everywhere.
+   ============================================================ */
+@media (max-width: 360px) {
+
+  /* ── Global page padding tighter ── */
+  .home, .quest, .leaderboard, .profile {
+    padding: 8px;
+  }
+
+  /* ── Container padding tighter ── */
+  .home .container,
+  .quest .container,
+  .leaderboard .container,
+  .profile .container {
+    padding: 0 8px;
+  }
+
+  /* ── Header: tighter padding, smaller gap ── */
+  .home header,
+  .quest header,
+  .leaderboard header,
+  .profile header {
+    padding: 12px;
+    gap: 8px;
+    margin-bottom: 10px;
+    border-radius: 8px;
+  }
+
+  /* ── Logo: smaller on tiny screens ── */
+  .home .logo,
+  .quest .logo,
+  .leaderboard .logo,
+  .profile .logo {
+    font-size: 16px;
+    letter-spacing: 1px;
+  }
+
+  /* ── Subtitle: smaller ── */
+  .home .subtitle,
+  .quest .subtitle,
+  .leaderboard .subtitle,
+  .profile .subtitle {
+    font-size: 11px;
+    margin-top: 3px;
+  }
+
+  /* ── Nav buttons: very compact ── */
+  .home .nav-btn,
+  .quest .nav-btn,
+  .leaderboard .nav-btn,
+  .profile .nav-btn {
+    font-size: 10px;
+    padding: 5px 8px;
+    border-radius: 6px;
+  }
+
+  /* ── Clock bar: compact ── */
+  .clock-bar {
+    padding: 6px 8px;
+    gap: 6px;
+    margin-bottom: 10px;
+    border-radius: 8px;
+  }
+  .clock-time {
+    font-size: 14px;
+    letter-spacing: 2px;
+  }
+  .clock-date {
+    font-size: 9px;
+    letter-spacing: 1px;
+  }
+
+  /* ── Cards: tighter padding ── */
+  .home .card,
+  .quest .card {
+    padding: 10px;
+    border-radius: 10px;
+  }
+
+  /* ── Section titles: smaller ── */
+  .home .section-title,
+  .quest .section-title,
+  .leaderboard .section-title,
+  .profile .section-title {
+    font-size: 13px;
+    margin-bottom: 8px;
+  }
+
+  /* ── Stats: tighter cells ── */
+  .home .stat,
+  .profile .stat {
+    padding: 10px 6px;
+    border-radius: 8px;
+  }
+  .home .stat .value,
+  .profile .stat .value {
+    font-size: 15px;
+    margin-top: 4px;
+  }
+  .home .stat .label,
+  .profile .stat .label {
+    font-size: 10px;
+  }
+  .home .stats-grid,
+  .profile .stats-grid {
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+
+  /* ── XP block: tighter ── */
+  .home .xp-block {
+    padding: 10px;
+    margin-top: 6px;
+  }
+  .home .xp-line {
+    height: 14px;
+  }
+  #xp-text {
+    font-size: 11px;
+  }
+  .home .level {
+    font-size: 13px;
+  }
+  .home .class-pill {
+    font-size: 11px;
+    padding: 5px 8px;
+    border-radius: 7px;
+  }
+
+  /* ── Quest button: compact ── */
+  .home .quest-btn,
+  .quest .quest-btn {
+    font-size: 11px;
+    padding: 10px 14px;
+    border-radius: 8px;
+  }
+
+  /* ── Quest rows: compact ── */
+  .quest-row {
+    padding: 10px 11px;
+    margin-bottom: 7px;
+    border-radius: 8px;
+  }
+  .quest-title {
+    font-size: 11px;
+    letter-spacing: 0.5px;
+  }
+  .quest-category,
+  .quest-exp {
+    font-size: 10px;
+  }
+  .quest-complete-btn {
+    font-size: 10px;
+    padding: 6px 10px;
+    border-radius: 6px;
+  }
+
+  /* ── Leaderboard list: no max-height cap on tiny ── */
+  .leaderboard .leaderboard-list {
+    gap: 6px;
+  }
+  .leaderboard .leaderboard-entry {
+    padding: 9px 10px;
+    border-radius: 8px;
+  }
+  .leaderboard .leaderboard-entry .entry-rank { font-size: 12px; }
+  .leaderboard .leaderboard-entry .entry-name { font-size: 11px; }
+  .leaderboard .leaderboard-entry .entry-class { font-size: 11px; }
+
+  /* ── Current rank: tighter ── */
+  .leaderboard .your-current-rank {
+    padding: 8px 10px;
+    margin-top: 8px;
+    border-radius: 8px;
+  }
+  .leaderboard .your-current-rank .section-title {
+    font-size: 10px;
+    margin-bottom: 4px;
+  }
+  .leaderboard .your-current-rank .rank  { font-size: 11px; }
+  .leaderboard .your-current-rank .class { font-size: 10px; }
+  .leaderboard .your-current-rank .name  { font-size: 10px; }
+
+  /* ── Profile: tighter cards ── */
+  .profile .profile-card,
+  .profile .stats-card,
+  .profile .log-card {
+    padding: 10px;
+    border-radius: 10px;
+  }
+  .profile .profile-content {
+    gap: 10px;
+  }
+  .profile .profile-pic img {
+    width: 64px;
+    height: 64px;
+  }
+  .profile .profile-detail .label,
+  .profile .profile-detail .value {
+    font-size: 11px;
+  }
+  .profile .logout-btn {
+    font-size: 12px;
+    padding: 10px 16px;
+  }
+
+  /* ── Login / New player: tighter ── */
+  .login .login-container,
+  .new-player .new-player-container {
+    padding: 20px 14px;
+    border-radius: 10px;
+  }
+  .login .login-container h2,
+  .new-player .new-player-container h2 {
+    font-size: 16px;
+  }
+  .login .icon-circle,
+  .new-player .icon-circle {
+    width: 64px;
+    height: 64px;
+  }
+  .login .icon-circle span,
+  .new-player .icon-circle span {
+    font-size: 32px;
+  }
+  .login .btn,
+  .new-player .btn {
+    font-size: 14px;
+    padding: 13px 0;
+  }
+
+}
